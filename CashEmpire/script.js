@@ -202,6 +202,13 @@
     else{x=inset;y=1-inset-(distance-3*edge);}
     return {x:x*100,y:y*100};
   }
+  function collectorGroupLabel(amount) {
+    if(amount<1000)return String(amount);
+    const suffixes=["","k","m","b","t","q","Q","s","S"];
+    const tier=Math.min(Math.floor(Math.log10(amount)/3),suffixes.length-1);
+    const scaled=amount/Math.pow(1000,tier);
+    return (scaled<10?scaled.toFixed(1).replace(/\\.0$/,""):scaled.toFixed(0))+suffixes[tier];
+  }
   function collectorVisuals(owned) {
     const count=Math.min(52,owned),tier=owned<=10?"low":owned<=30?"medium":owned<=75?"high":"army";
     const slots=[];
@@ -235,12 +242,12 @@
       if(slot.group>1){
         const badge=document.createElement("span");
         badge.className="collector-group";
-        badge.textContent="×"+format(slot.group);
+        badge.textContent="×"+collectorGroupLabel(slot.group);
         item.append(badge);
       }
       ring.append(item);
     }
-    $("collectorStatus").textContent=owned?format(owned)+" CASH COLLECTORS AT WORK":"TAP THE CASH TO COLLECT";
+    $("collectorStatus").textContent=owned?owned.toLocaleString("en-US")+" CASH COLLECTORS AT WORK":"TAP THE CASH TO COLLECT";
   }
   function renderTop() {
     moneyEl.textContent=euro(state.money,state.money<100?1:0);
