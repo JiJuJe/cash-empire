@@ -57,7 +57,7 @@
   let state = defaultState();
   let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
   let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
-  let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0;
+  let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0;
   const has = id => state.upgrades.includes(id);
   const hasPrestige = id => state.prestigeUpgrades.includes(id);
   const safeNumber = (value,fallback=0) => Number.isFinite(value) && value >= 0 ? Math.min(value,1e300) : fallback;
@@ -263,7 +263,7 @@
       detail.textContent=euro(b.income*businessMultiplier(b)*prestigeBonus()*(hasPrestige("investor")?1.1:1),b.income<10?1:0)+"/sec each";
       const count=document.createElement("span");count.className="business-owned";count.textContent="OWNED "+format(owned);
       info.append(title,detail,count);
-      const button=makeButton("BUY "+(buyAmount==="max"?"MAX":"×"+want),quantity===0,()=>buyBusiness(b));
+      const button=makeButton("BUY ×"+want,quantity===0,()=>buyBusiness(b));
       const cost=document.createElement("small");cost.textContent=euro(price);
       button.append(cost);card.append(icon,info,button);list.append(card);
     }
@@ -485,7 +485,7 @@
   }
   function init() {
     load();applySettings();applyOffline();
-    pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;effect(value,event);playTone();checkAchievements();renderTop();save();});
+    pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
