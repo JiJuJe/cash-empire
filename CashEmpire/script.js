@@ -161,8 +161,8 @@
       const note=document.createElement("span");note.className="particle-note";note.textContent="▰";
       note.style.setProperty("--x",x+"px");note.style.setProperty("--y",y+"px");
       note.style.setProperty("--dx",(Math.random()*130-65)+"px");
-      note.style.setProperty("--dy",(Math.random()*90-70)+"px");
-      layer.append(note);setTimeout(() => note.remove(),750);
+      note.style.setProperty("--dy",(35+Math.random()*90)+"px");
+      $("particleLayer").append(note);setTimeout(() => note.remove(),750);
     }
   }
   function toast(message,achievement=false) {
@@ -192,20 +192,55 @@
     }
     if(changed) save();
   }
+  function perimeterSlot(index,total,inset,phase=0) {
+    const edge=1-2*inset,perimeter=4*edge;
+    let distance=(edge/2+(index+phase)*perimeter/total)%perimeter;
+    let x,y;
+    if(distance<edge){x=inset+distance;y=inset;}
+    else if(distance<2*edge){x=1-inset;y=inset+distance-edge;}
+    else if(distance<3*edge){x=1-inset-(distance-2*edge);y=1-inset;}
+    else{x=inset;y=1-inset-(distance-3*edge);}
+    return {x:x*100,y:y*100};
+  }
+  function collectorVisuals(owned) {
+    const count=Math.min(52,owned),tier=owned<=10?"low":owned<=30?"medium":owned<=75?"high":"army";
+    const slots=[];
+    if(!count)return {tier,slots};
+    const outerCount=Math.min(count,30),innerCount=count-outerCount;
+    const base=Math.floor(owned/count),extra=owned%count;
+    for(let i=0;i<count;i++){
+      const outer=i<outerCount;
+      const point=perimeterSlot(outer?i:i-outerCount,outer?outerCount:innerCount,outer?.07:.13,outer?0:.25);
+      slots.push({x:point.x,y:point.y,group:base+(i<extra?1:0)});
+    }
+    return {tier,slots};
+  }
   function updatePile() {
     const n=state.lifetime;
     const stage=n>=1e9?4:n>=1e6?3:n>=10000?2:n>=100?1:0;
     pileEl.className="money-pile stage-"+stage+(pileEl.classList.contains("popped")?" popped":"");
-    const ring=$("collectorRing"),count=Math.min(16,state.businesses.collector);
-    if(ring.childElementCount!==count) {
-      ring.replaceChildren();
-      for(let i=0;i<count;i++){
-        const item=document.createElement("span");item.className="collector";item.textContent="€";
-        item.style.setProperty("--angle",(i*360/count)+"deg");
-        item.style.setProperty("--delay",(-i*.17)+"s");
-        ring.append(item);
+    const owned=state.businesses.collector,ring=$("collectorRing");
+    if(ring.dataset.owned===String(owned))return;
+    ring.dataset.owned=String(owned);
+    const visual=collectorVisuals(owned);
+    ring.dataset.tier=visual.tier;
+    ring.replaceChildren();
+    for(const [index,slot] of visual.slots.entries()){
+      const item=document.createElement("span");
+      item.className="collector";
+      item.textContent="€";
+      item.style.setProperty("--x",slot.x+"%");
+      item.style.setProperty("--y",slot.y+"%");
+      item.style.setProperty("--delay",(-index*.07)+"s");
+      if(slot.group>1){
+        const badge=document.createElement("span");
+        badge.className="collector-group";
+        badge.textContent="×"+format(slot.group);
+        item.append(badge);
       }
+      ring.append(item);
     }
+    $("collectorStatus").textContent=owned?format(owned)+" CASH COLLECTORS AT WORK":"TAP THE CASH TO COLLECT";
   }
   function renderTop() {
     moneyEl.textContent=euro(state.money,state.money<100?1:0);
@@ -504,6 +539,6 @@
     renderTop();renderCurrent();checkAchievements();setInterval(tick,100);
     setInterval(save,10000);
   }
-  window.CashEmpireMath={totalCost,maxAffordable,format,configs:BUSINESS};
+  window.CashEmpireMath={totalCost,maxAffordable,format,collectorVisuals,configs:BUSINESS};
   init();
 })();
