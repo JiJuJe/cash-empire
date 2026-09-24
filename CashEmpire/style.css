@@ -289,3 +289,8 @@ h1,h2,h3,p{margin-top:0}
 @media(min-width:1550px){.progress-area .upgrade-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:800px){.content-column{height:calc(100vh - 42px);min-height:640px;max-height:none;overflow:hidden}.play-column .pile-zone{flex:1}}
 @media(max-width:600px){.play-column .pile-zone{height:335px;min-height:335px;flex:none}.play-column .money-pile{width:min(88vw,335px)}.content-column{height:auto;min-height:0;overflow:visible}.progress-area{height:315px}.world-panel{height:480px;min-height:480px;flex:none}.world-panel .owned-heading h2{font-size:18px}.starter-previews{gap:5px}.starter-preview img{width:43px;height:43px}.starter-preview strong{font-size:8px}}
+
+.world-panel .world-starter{min-height:100%}
+.world-panel .owned-copy{animation:none}
+.world-panel .owned-copy:nth-child(4n+1){animation:businessBreathe 3.8s ease-in-out var(--delay,0s) infinite}
+.reduce-motion .world-panel .owned-copy{animation:none}

@@ -32,7 +32,7 @@ jobs:
             js=$(curl -fsSL "https://jijuje.github.io/cash-empire/script.js?v=$GITHUB_SHA" || true)
             css=$(curl -fsSL "https://jijuje.github.io/cash-empire/style.css?v=$GITHUB_SHA" || true)
             image_status=$(curl -sL -o /dev/null -w "%{http_code}" "https://jijuje.github.io/cash-empire/assets/cash-collector.png?v=$GITHUB_SHA")
-            if [[ "$html" == *"empire-world-1"* && "$js" == *"world-starter"* && "$css" == *".world-panel"* && "$image_status" == "200" ]]; then
+            if [[ "$html" == *"empire-world-2"* && "$js" == *"world-starter"* && "$css" == *".world-panel"* && "$image_status" == "200" ]]; then
               echo "Live game assets match the deployed redesign."
               exit 0
             fi
