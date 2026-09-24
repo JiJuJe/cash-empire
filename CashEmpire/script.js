@@ -582,7 +582,8 @@
   function featureHeader(title,buttonLabel,handler) {
     const header=featureElement("div","feature-header");
     const titleBox=featureElement("div");
-    titleBox.append(featureElement("span","eyebrow","CASH EMPIRE"),featureElement("h2","",title));
+    const heading=featureElement("h2","",title);heading.id="featureTitle";
+    titleBox.append(featureElement("span","eyebrow","CASH EMPIRE"),heading);
     header.append(titleBox);
     if(buttonLabel)header.append(makeButton(buttonLabel,false,handler));
     return header;

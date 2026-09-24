@@ -331,3 +331,5 @@ h1,h2,h3,p{margin-top:0}
 .light .premium-note,.light .premium-info p{color:#4e6a54}
 @media(max-width:1500px){.progress-area .tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0}.progress-area .tab{min-width:0;white-space:normal;padding:15px 2px 12px;font-size:9px;letter-spacing:.015em;line-height:1.15}}
 @media(max-width:600px){.progress-area .tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.progress-area .tab{font-size:10px;padding:11px 2px}.feature-body{padding:18px 12px}.leaderboard-head{display:none}.leaderboard-row{grid-template-columns:34px minmax(0,1fr) auto;gap:2px 8px;font-size:11px}.leaderboard-row .rank{grid-row:1/3}.leaderboard-row .cash{font-weight:750}.leaderboard-row .rebirths{grid-column:2/4;text-align:left}.premium-card{grid-template-columns:56px 1fr;gap:10px}.premium-icon{width:52px;height:52px;font-size:21px}.premium-buy{grid-column:1/3;width:100%}}
+
+.feature-header{padding-right:48px}
