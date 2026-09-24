@@ -247,7 +247,7 @@
       }
       ring.append(item);
     }
-    $("collectorStatus").textContent=owned?owned.toLocaleString("en-US")+" CASH COLLECTORS AT WORK":"TAP THE CASH TO COLLECT";
+    $("collectorStatus").textContent=owned?owned.toLocaleString("en-US")+(owned===1?" CASH COLLECTOR AT WORK":" CASH COLLECTORS AT WORK"):"TAP THE CASH TO COLLECT";
   }
   function renderTop() {
     moneyEl.textContent=euro(state.money,state.money<100?1:0);
