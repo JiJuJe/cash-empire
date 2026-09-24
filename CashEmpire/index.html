@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#11251c">
   <meta name="description" content="Cash Empire — build a business fortune, one tap at a time.">
   <title>Cash Empire</title>
-  <link rel="stylesheet" href="style.css?v=empire-redesign-2">
-  <script src="script.js?v=empire-redesign-2" defer></script>
+  <link rel="stylesheet" href="style.css?v=empire-world-1">
+  <script src="script.js?v=empire-world-1" defer></script>
 </head>
 <body>
   <div class="game-shell">
     <div class="market-ticker"><span class="ticker-label"><span class="live-dot"></span> MARKET WIRE</span><span id="tickerText" class="ticker-text">The market is open. Every tap counts.</span><span class="ticker-mark">CASH EMPIRE</span></div>
     <main class="columns">
-      <section class="play-column" aria-label="Cash collection and owned businesses">
+      <section class="play-column" aria-label="Cash collection">
         <header class="play-header"><div class="brand-mark">$</div><div><span class="brand-kicker">BUILD YOUR FORTUNE</span><h1>CASH EMPIRE</h1></div></header>
         <div class="balance-card"><span class="eyebrow">YOUR CASH</span><div id="balance" class="balance">$0</div><div class="income-line"><span id="rate">$0 / second</span><span class="income-divider">•</span><span id="perClick">$1 / click</span></div></div>
         <div id="pileZone" class="pile-zone">
@@ -24,13 +24,10 @@
           <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>$</span><small>GOLDEN BILL</small></button>
         </div>
         <div id="buffBar" class="buff-bar" aria-live="polite"></div>
-        <section class="owned-panel" aria-label="Owned businesses">
-          <div class="owned-heading"><div><span class="eyebrow">YOUR OPERATIONS</span><h2>Owned businesses</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>
-          <div id="ownedBusinessList" class="owned-business-list"><p class="owned-empty">Your first business will appear here.</p></div>
-        </section>
         <div class="play-footer"><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">$0</strong></div>
       </section>
       <section class="content-column" aria-label="Empire progress">
+        <div class="progress-area">
         <nav class="tabs" aria-label="Progress tabs">
           <button class="tab active" data-tab="upgrades" type="button">UPGRADES</button>
           <button class="tab" data-tab="stats" type="button">STATS</button>
@@ -57,6 +54,11 @@
           <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each Empire Point adds 1% to all income. Rebirth to keep your advantage forever.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
           <h3 class="tree-title">Empire investments</h3><div id="prestigeTree" class="prestige-tree"></div>
         </div>
+        </div>
+        <section class="owned-panel world-panel" aria-label="Owned generator world">
+          <div class="owned-heading"><div><span class="eyebrow">THE ENGINE OF YOUR EMPIRE</span><h2>Your business world</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>
+          <div id="ownedBusinessList" class="owned-business-list"></div>
+        </section>
       </section>
       <aside id="storeColumn" class="store-column" aria-label="Business store">
         <div class="store-top"><div><span class="eyebrow">THE MARKETPLACE</span><h2>Businesses</h2></div><div class="store-badge">EST. TODAY</div></div>

@@ -271,10 +271,19 @@
     $("ownedTotal").textContent=total.toLocaleString("en-US")+" owned";
     list.replaceChildren();
     if(!total){
-      const empty=document.createElement("p");
-      empty.className="owned-empty";
-      empty.textContent="Your first business will appear here.";
-      list.append(empty);
+      const starter=document.createElement("div");
+      starter.className="world-starter";
+      const badge=document.createElement("span");badge.className="eyebrow";badge.textContent="YOUR EMPIRE STARTS HERE";
+      const title=document.createElement("h3");title.textContent="Fill the world with your businesses";
+      const description=document.createElement("p");description.textContent="Buy a generator in the market. Every business you own will appear in this world.";
+      const previews=document.createElement("div");previews.className="starter-previews";
+      for(const b of BUSINESS.slice(0,4)){
+        const preview=document.createElement("div");preview.className="starter-preview";
+        const image=document.createElement("img");image.src=b.image;image.alt="";image.loading="lazy";
+        const name=document.createElement("strong");name.textContent=b.name;
+        preview.append(image,name);previews.append(preview);
+      }
+      starter.append(badge,title,description,previews);list.append(starter);
       return;
     }
     for(const b of BUSINESS){
@@ -284,13 +293,17 @@
       row.className="owned-row"+(owned>30?" dense":owned>10?" medium":"");
       const head=document.createElement("div");head.className="owned-row-head";
       const image=document.createElement("img");image.src=b.image;image.alt="";image.loading="lazy";
+      const title=document.createElement("div");title.className="owned-row-title";
       const name=document.createElement("strong");name.textContent=b.name;
-      const amount=document.createElement("span");amount.textContent="×"+owned.toLocaleString("en-US");
-      head.append(image,name,amount);
+      const rate=document.createElement("small");rate.textContent=euro(businessTotalRate(b),businessTotalRate(b)<10?1:0)+" / second";
+      title.append(name,rate);
+      const amount=document.createElement("span");amount.className="owned-quantity";amount.textContent="×"+owned.toLocaleString("en-US");
+      head.append(image,title,amount);
       const copies=document.createElement("div");copies.className="owned-copies";
       const visible=Math.min(24,owned),base=Math.floor(owned/visible),extra=owned%visible;
       for(let i=0;i<visible;i++){
         const copy=document.createElement("span");copy.className="owned-copy";
+        copy.style.setProperty("--delay",((i%7)*-.28)+"s");
         const icon=document.createElement("img");icon.src=b.image;icon.alt="";icon.loading="lazy";
         copy.append(icon);
         const group=base+(i<extra?1:0);
@@ -300,6 +313,15 @@
         copies.append(copy);
       }
       row.append(head,copies);list.append(row);
+    }
+    const next=BUSINESS.find(b=>state.businesses[b.id]===0);
+    if(next){
+      const preview=document.createElement("div");preview.className="world-next";
+      const image=document.createElement("img");image.src=next.image;image.alt="";
+      const copy=document.createElement("div");
+      const label=document.createElement("span");label.className="eyebrow";label.textContent="NEXT OPPORTUNITY";
+      const name=document.createElement("strong");name.textContent=next.name;
+      copy.append(label,name);preview.append(image,copy);list.append(preview);
     }
   }
   function allUpgrades() {

@@ -239,3 +239,53 @@ h1,h2,h3,p{margin-top:0}
 .scene-1{transform:scale(1.18)}
 .ticker-text{min-width:0}
 @media(max-width:600px){.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}.tab{min-width:0;white-space:normal;font-size:9px;letter-spacing:.025em;padding-inline:2px}}
+
+/* The center column is an upgrade deck above the generator world. */
+.play-column{justify-content:flex-start}
+.play-column .pile-zone{height:auto;min-height:260px;flex:1}
+.play-column .money-pile{width:min(90%,42vh,385px)}
+.play-column .play-footer{margin-top:auto}
+.content-column{display:flex;flex-direction:column;padding:0;overflow:hidden}
+.progress-area{height:clamp(245px,36vh,345px);flex:none;overflow-y:auto;scrollbar-color:#5b855d transparent;background:#12271f}
+.progress-area .tabs{padding:0 16px}
+.progress-area .tab-panel{padding:17px 18px 20px}
+.progress-area .section-heading h2{font-size:22px}
+.progress-area .section-intro{margin-bottom:11px}
+.progress-area .upgrade-list{gap:8px}
+.progress-area .upgrade-card{padding:9px 10px}
+.progress-area .empty-state{padding:14px}
+.world-panel{position:relative;flex:1;min-height:0;padding:15px 16px 10px;overflow:hidden;border-top:3px solid #ccaa60;background:radial-gradient(circle at 50% 0,#2b523a 0,#1a382b 46%,#10291f 100%);isolation:isolate}
+.world-panel:before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.32;background:repeating-linear-gradient(to bottom,transparent 0 98px,#537e5833 99px 101px),radial-gradient(circle at 80% 80%,#c3af4d20,transparent 55%)}
+.world-panel>*{position:relative;z-index:1}
+.world-panel .owned-heading{padding:0 4px 11px;border-bottom:1px solid #668b6670}
+.world-panel .owned-heading h2{font-size:20px;margin:3px 0 0}
+.world-panel .owned-total{font-size:12px}
+.world-panel .owned-business-list{flex:1;padding:12px 3px 16px;overflow-y:auto}
+.world-panel .owned-row{min-height:112px;margin:0 0 11px;padding:10px 12px;background:linear-gradient(125deg,#173d2cf2,#1d4833d9);border:1px solid #58805a;border-left:4px solid #d4ad5d;border-radius:12px;box-shadow:0 7px 13px #061a1245}
+.world-panel .owned-row-head{gap:10px;margin-bottom:9px}
+.world-panel .owned-row-head>img{width:44px;height:44px}
+.owned-row-title{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.world-panel .owned-row-head .owned-row-title strong{font-size:14px;color:var(--cream)}
+.owned-row-title small{font-size:11px;color:var(--muted);font-weight:500}
+.world-panel .owned-row-head .owned-quantity{font-size:16px;font-weight:850;color:#f1d486}
+.world-panel .owned-copies{gap:5px;min-height:40px}
+.world-panel .owned-copy{width:44px;height:44px;border:1px solid #6d946d88;background:#325941a8;animation:businessBreathe 3.8s ease-in-out var(--delay,0s) infinite}
+.world-panel .owned-row.medium .owned-copy{width:36px;height:36px}
+.world-panel .owned-row.dense .owned-copy{width:28px;height:28px}
+.world-panel .copy-group{font-size:9px;right:-3px;bottom:-3px}
+@keyframes businessBreathe{50%{transform:translateY(-2px)}}
+.reduce-motion .owned-copy{animation:none}
+.world-starter{min-height:245px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px 15px;background:linear-gradient(140deg,#254d36a8,#173626b5);border:1px dashed #7da66d;border-radius:14px}
+.world-starter h3{font-size:19px;line-height:1.2;margin:10px 0 8px}
+.world-starter p{max-width:360px;margin:0 0 16px;color:var(--muted);font-size:12px;line-height:1.5}
+.starter-previews{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%}
+.starter-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:92px;padding:5px;border:1px solid #547658;border-radius:9px;background:#0c291e88;opacity:.75}
+.starter-preview img{width:55px;height:55px;object-fit:contain;filter:saturate(.65)}
+.starter-preview strong{font-size:9px;line-height:1.15;color:#d8e0ce}
+.world-next{display:flex;align-items:center;gap:13px;min-height:70px;padding:8px 12px;border:1px dashed #719568;border-radius:10px;background:#17392888;opacity:.72}
+.world-next img{width:55px;height:55px;object-fit:contain;filter:grayscale(.35)}
+.world-next div{display:flex;flex-direction:column;gap:3px}
+.world-next strong{font-size:14px}
+@media(min-width:1550px){.progress-area .upgrade-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:800px){.content-column{height:calc(100vh - 42px);min-height:640px;max-height:none;overflow:hidden}.play-column .pile-zone{flex:1}}
+@media(max-width:600px){.play-column .pile-zone{height:335px;min-height:335px;flex:none}.play-column .money-pile{width:min(88vw,335px)}.content-column{height:auto;min-height:0;overflow:visible}.progress-area{height:315px}.world-panel{height:480px;min-height:480px;flex:none}.world-panel .owned-heading h2{font-size:18px}.starter-previews{gap:5px}.starter-preview img{width:43px;height:43px}.starter-preview strong{font-size:8px}}
