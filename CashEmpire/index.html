@@ -3,44 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#122720">
-  <meta name="description" content="Cash Empire — an original, lightweight money empire clicker game.">
+  <meta name="theme-color" content="#11251c">
+  <meta name="description" content="Cash Empire — build a business fortune, one tap at a time.">
   <title>Cash Empire</title>
-  <link rel="stylesheet" href="style.css?v=collectors-2">
-  <script src="script.js?v=collectors-2" defer></script>
+  <link rel="stylesheet" href="style.css?v=empire-redesign-1">
+  <script src="script.js?v=empire-redesign-1" defer></script>
 </head>
 <body>
   <div class="game-shell">
-    <header class="mobile-head"><span class="brand-mark">€</span><strong>CASH EMPIRE</strong><button id="mobileStore" type="button">Store ↓</button></header>
+    <div class="market-ticker"><span class="ticker-label"><span class="live-dot"></span> MARKET WIRE</span><span id="tickerText" class="ticker-text">The market is open. Every tap counts.</span><span class="ticker-mark">CASH EMPIRE</span></div>
     <main class="columns">
-      <section class="play-column" aria-label="Money pile">
-        <div class="logo"><span class="brand-mark">€</span><div><small>BUILD YOUR FORTUNE</small><h1>CASH EMPIRE</h1></div></div>
-        <div class="balance-card"><span class="eyebrow">YOUR CASH</span><div id="balance" class="balance">€0</div><div class="rate"><span class="pulse-dot"></span><span id="rate">€0 / second</span></div></div>
+      <section class="play-column" aria-label="Cash collection and owned businesses">
+        <header class="play-header"><div class="brand-mark">$</div><div><span class="brand-kicker">BUILD YOUR FORTUNE</span><h1>CASH EMPIRE</h1></div></header>
+        <div class="balance-card"><span class="eyebrow">YOUR CASH</span><div id="balance" class="balance">$0</div><div class="income-line"><span id="rate">$0 / second</span><span class="income-divider">•</span><span id="perClick">$1 / click</span></div></div>
         <div id="pileZone" class="pile-zone">
           <div id="particleLayer" class="particle-layer" aria-hidden="true"></div>
-          <div class="pile-halo"></div>
-          <div id="collectorRing" class="collector-ring" aria-hidden="true"></div>
-          <button id="moneyPile" class="money-pile stage-0" type="button" aria-label="Collect cash from the money pile">
-            <span class="vault" aria-hidden="true"><span class="vault-door"><span class="vault-wheel">€</span></span></span>
-            <span class="cash-group" aria-hidden="true">
-              <span class="note note-a">€</span><span class="note note-b">€</span><span class="note note-c">€</span>
-              <span class="stack stack-a"><i></i><i></i><i></i></span>
-              <span class="stack stack-b"><i></i><i></i><i></i></span>
-              <span class="stack stack-c"><i></i><i></i><i></i></span>
-              <span class="stack stack-d"><i></i><i></i><i></i></span>
-              <span class="stack stack-e"><i></i><i></i><i></i></span>
-              <span class="coin coin-a">€</span><span class="coin coin-b">€</span><span class="coin coin-c">€</span>
-            </span>
-          </button>
+          <div class="wealth-backdrop" aria-hidden="true"></div>
+          <button id="moneyPile" class="money-pile wealth-0" type="button" aria-label="Collect cash from the wealth pile"></button>
           <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
-          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>€</span><small>GOLDEN BILL</small></button>
+          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>$</span><small>GOLDEN BILL</small></button>
         </div>
-        <div id="collectorStatus" class="collector-status">TAP THE CASH TO COLLECT</div>
-        <div class="play-footer"><div><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">€0</strong></div><div><span class="eyebrow">PER CLICK</span><strong id="perClick">€1</strong></div></div>
         <div id="buffBar" class="buff-bar" aria-live="polite"></div>
+        <section class="owned-panel" aria-label="Owned businesses">
+          <div class="owned-heading"><div><span class="eyebrow">YOUR OPERATIONS</span><h2>Owned businesses</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>
+          <div id="ownedBusinessList" class="owned-business-list"><p class="owned-empty">Your first business will appear here.</p></div>
+        </section>
+        <div class="play-footer"><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">$0</strong></div>
       </section>
-
-      <section class="content-column" aria-label="Progress">
+      <section class="content-column" aria-label="Empire progress">
         <nav class="tabs" aria-label="Progress tabs">
           <button class="tab active" data-tab="upgrades" type="button">UPGRADES</button>
           <button class="tab" data-tab="stats" type="button">STATS</button>
@@ -48,34 +38,34 @@
           <button class="tab" data-tab="prestige" type="button">REBIRTH</button>
         </nav>
         <div id="tab-upgrades" class="tab-panel active">
-          <div class="section-heading"><div><small>THE NEXT BIG THING</small><h2>Upgrades</h2></div><span id="upgradeCount" class="section-count">0 available</span></div>
-          <p class="section-intro">New ideas appear as your empire grows.</p>
+          <div class="section-heading"><div><span class="eyebrow">MAKE YOUR MONEY WORK</span><h2>Upgrades</h2></div><span id="upgradeCount" class="section-count">0 available</span></div>
+          <p class="section-intro">Fresh ideas arrive as your empire grows.</p>
           <div id="upgradeList" class="upgrade-list"></div>
         </div>
         <div id="tab-stats" class="tab-panel" hidden>
-          <div class="section-heading"><div><small>BY THE NUMBERS</small><h2>Statistics</h2></div></div>
+          <div class="section-heading"><div><span class="eyebrow">BY THE NUMBERS</span><h2>Statistics</h2></div></div>
           <div id="statsGrid" class="stats-grid"></div>
           <div class="settings-card"><h3>Settings</h3><div id="settingsList" class="settings-list"></div></div>
           <div class="save-card"><h3>Save management</h3><p>Your progress saves automatically in this browser.</p><div class="save-actions"><button id="exportSave" type="button">Export Save</button><button id="importSave" type="button">Import Save</button><button id="resetGame" class="danger" type="button">Reset Game</button></div></div>
         </div>
         <div id="tab-achievements" class="tab-panel" hidden>
-          <div class="section-heading"><div><small>PROOF OF PROGRESS</small><h2>Achievements</h2></div><span id="achievementCount" class="section-count">0 / 0</span></div>
+          <div class="section-heading"><div><span class="eyebrow">PROOF OF PROGRESS</span><h2>Achievements</h2></div><span id="achievementCount" class="section-count">0 / 0</span></div>
           <div id="achievementGrid" class="achievement-grid"></div>
         </div>
         <div id="tab-prestige" class="tab-panel" hidden>
-          <div class="section-heading"><div><small>START AGAIN. GO FURTHER.</small><h2>Rebirth</h2></div></div>
-          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each unspent or spent Empire Point adds 1% to all income. Build a fortune, then rebirth to keep your advantage forever.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
+          <div class="section-heading"><div><span class="eyebrow">START AGAIN. GO FURTHER.</span><h2>Rebirth</h2></div></div>
+          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each Empire Point adds 1% to all income. Rebirth to keep your advantage forever.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
           <h3 class="tree-title">Empire investments</h3><div id="prestigeTree" class="prestige-tree"></div>
         </div>
       </section>
-
       <aside id="storeColumn" class="store-column" aria-label="Business store">
-        <div class="store-top"><div><small>THE MARKETPLACE</small><h2>Businesses</h2></div><div class="store-badge">EST. TODAY</div></div>
+        <div class="store-top"><div><span class="eyebrow">THE MARKETPLACE</span><h2>Businesses</h2></div><div class="store-badge">EST. TODAY</div></div>
         <div class="buy-row"><span>BUY</span><div class="buy-options"><button class="buy-option active" data-buy="1" type="button">x1</button><button class="buy-option" data-buy="10" type="button">x10</button><button class="buy-option" data-buy="100" type="button">x100</button><button class="buy-option" data-buy="max" type="button">MAX</button></div></div>
         <div id="businessList" class="business-list"></div>
       </aside>
     </main>
   </div>
+  <div id="businessTooltip" class="business-tooltip" role="tooltip" hidden></div>
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <div id="modalBackdrop" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button id="modalClose" class="modal-close" type="button" aria-label="Close">×</button><span class="eyebrow">CASH EMPIRE</span><h2 id="modalTitle"></h2><div id="modalBody"></div><div id="modalActions" class="modal-actions"></div></div></div>
 </body>

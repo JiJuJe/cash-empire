@@ -31,8 +31,9 @@ jobs:
             html=$(curl -fsSL "https://jijuje.github.io/cash-empire/?v=$GITHUB_SHA" || true)
             js=$(curl -fsSL "https://jijuje.github.io/cash-empire/script.js?v=$GITHUB_SHA" || true)
             css=$(curl -fsSL "https://jijuje.github.io/cash-empire/style.css?v=$GITHUB_SHA" || true)
-            if [[ "$html" == *"collectors-2"* && "$js" == *"collectorVisuals"* && "$css" == *"collector-group"* ]]; then
-              echo "Live game assets match the deployed collector layout."
+            image_status=$(curl -sL -o /dev/null -w "%{http_code}" "https://jijuje.github.io/cash-empire/assets/cash-collector.png?v=$GITHUB_SHA")
+            if [[ "$html" == *"empire-redesign-1"* && "$js" == *"WEALTH_SCENES"* && "$css" == *"owned-row"* && "$image_status" == "200" ]]; then
+              echo "Live game assets match the deployed redesign."
               exit 0
             fi
             sleep 5

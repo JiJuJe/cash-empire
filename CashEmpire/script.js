@@ -4,24 +4,24 @@
   const PRICE_GROWTH = 1.15;
   const OFFLINE_CAP = 10 * 3600;
   const BUSINESS = [
-    {id:"collector",name:"Cash Collector",icon:"✋",cost:10,income:.1},
-    {id:"lemonade",name:"Lemonade Stand",icon:"🍋",cost:15,income:.2},
-    {id:"newspaper",name:"Newspaper Route",icon:"🗞",cost:100,income:1},
-    {id:"vending",name:"Vending Machine",icon:"🥤",cost:1000,income:8},
-    {id:"shop",name:"Small Shop",icon:"🏪",cost:12000,income:47},
-    {id:"restaurant",name:"Restaurant",icon:"🍽",cost:130000,income:260},
-    {id:"supermarket",name:"Supermarket",icon:"🛒",cost:1400000,income:1400},
-    {id:"factory",name:"Factory",icon:"⚙",cost:20000000,income:9000},
-    {id:"bank",name:"Bank",icon:"🏦",cost:330000000,income:55000},
-    {id:"corporation",name:"Corporation",icon:"🏢",cost:7000000000,income:420000},
-    {id:"exchange",name:"Stock Exchange",icon:"📈",cost:170000000000,income:3500000},
-    {id:"mega",name:"Mega Corporation",icon:"🌆",cost:4500000000000,income:30000000},
-    {id:"global",name:"Global Empire",icon:"🌍",cost:140000000000000,income:300000000},
-    {id:"moon",name:"Moon Bank",icon:"🌙",cost:5000000000000000,income:4000000000},
-    {id:"galactic",name:"Galactic Corporation",icon:"🪐",cost:250000000000000000,income:60000000000},
-    {id:"multiverse",name:"Money Multiverse",icon:"✧",cost:10000000000000000000,income:1000000000000}
+    {id:"collector",name:"Cash Collector",image:"assets/cash-collector.png",cost:10,income:0.1},
+    {id:"lemonade",name:"Lemonade Stand",image:"assets/lemonade-stand.png",cost:15,income:0.2},
+    {id:"newspaper",name:"Newspaper Route",image:"assets/newspaper-route.png",cost:100,income:1},
+    {id:"vending",name:"Vending Machine",image:"assets/vending-machine.png",cost:1000,income:8},
+    {id:"shop",name:"Small Shop",image:"assets/small-shop.png",cost:12000,income:47},
+    {id:"restaurant",name:"Restaurant",image:"assets/restaurant.png",cost:130000,income:260},
+    {id:"supermarket",name:"Supermarket",image:"assets/supermarket.png",cost:1400000,income:1400},
+    {id:"factory",name:"Factory",image:"assets/factory.png",cost:20000000,income:9000},
+    {id:"bank",name:"Bank",image:"assets/bank.png",cost:330000000,income:55000},
+    {id:"corporation",name:"Corporation",image:"assets/corporation.png",cost:7000000000,income:420000},
+    {id:"exchange",name:"Stock Exchange",image:"assets/stock-exchange.png",cost:170000000000,income:3500000},
+    {id:"mega",name:"Mega Corporation",image:"assets/mega-corporation.png",cost:4500000000000,income:30000000},
+    {id:"global",name:"Global Empire",image:"assets/global-empire.png",cost:140000000000000,income:300000000},
+    {id:"moon",name:"Moon Bank",image:"assets/moon-bank.png",cost:5000000000000000,income:4000000000},
+    {id:"galactic",name:"Galactic Corporation",image:"assets/galactic-corporation.png",cost:250000000000000000,income:60000000000},
+    {id:"multiverse",name:"Money Multiverse",image:"assets/money-multiverse.png",cost:10000000000000000000,income:1000000000000}
   ];
-  const CLICK_UPGRADES = [
+    const CLICK_UPGRADES = [
     {id:"wallet",name:"Better Wallet",icon:"👛",cost:50,mult:2,unlock:25,description:"Click income ×2"},
     {id:"fingers",name:"Fast Fingers",icon:"⚡",cost:500,mult:2,unlock:250,description:"Click income ×2"},
     {id:"goldWallet",name:"Golden Wallet",icon:"💛",cost:10000,mult:3,unlock:5000,description:"Click income ×3"},
@@ -30,6 +30,15 @@
     {id:"quantum",name:"Quantum Purse",icon:"⚛",cost:10000000000,mult:10,unlock:5000000000,description:"Click income ×10"},
     {id:"cosmic",name:"Cosmic Grip",icon:"✦",cost:1000000000000,mult:20,unlock:500000000000,description:"Click income ×20"},
     {id:"infinite",name:"Infinite Pocket",icon:"∞",cost:1000000000000000,mult:50,unlock:500000000000000,description:"Click income ×50"}
+  ];
+  const SPECIAL_UPGRADES = [
+    {id:"marketSense",name:"Market Sense",icon:"◈",cost:300,unlock:100,description:"All businesses produce +1%.",effect:"total",mult:1.01},
+    {id:"tapTraining",name:"Tap Training",icon:"✦",cost:2500,unlock:1000,description:"Click value +25%.",effect:"click",mult:1.25},
+    {id:"vendingDining",name:"Lunch Rush",icon:"↗",cost:250000,requires:{vending:5,restaurant:1},description:"Vending Machines boost Restaurants ×1.5.",effect:"restaurant",mult:1.5},
+    {id:"restaurantSupply",name:"Supply Chain",icon:"◉",cost:3000000,requires:{restaurant:10,supermarket:1},description:"Restaurants boost Supermarkets ×1.5.",effect:"supermarket",mult:1.5},
+    {id:"cashflow",name:"Cashflow Forecast",icon:"▣",cost:50000000,unlock:20000000,description:"All businesses produce +5%.",effect:"total",mult:1.05},
+    {id:"bankingNetwork",name:"Banking Network",icon:"⌁",cost:10000000000,requires:{bank:5,corporation:1},description:"Banks boost Corporations ×2.",effect:"corporation",mult:2},
+    {id:"precisionTap",name:"Executive Touch",icon:"◆",cost:50000000000,unlock:10000000000,description:"Click value ×2.",effect:"click",mult:2}
   ];
   const MILESTONES = [
     {count:10,mult:2},{count:25,mult:2},{count:50,mult:2},{count:100,mult:3},{count:200,mult:4}
@@ -48,34 +57,34 @@
   const defaultState = () => ({
     version:1,money:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
+    businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     upgrades:[],achievements:[],prestigeUpgrades:[],
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
-    settings:{sound:true,animations:true,particles:true,compact:true,light:false}
+    settings:{sound:true,animations:true,particles:true,compact:false,light:false}
   });
   let state = defaultState();
   let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
   let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
-  let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0;
+  let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
+  const businessRows=new Map();
+  let tooltipBusinessId=null,tickerIndex=0,tickerNext=Date.now()+11000;
   const has = id => state.upgrades.includes(id);
   const hasPrestige = id => state.prestigeUpgrades.includes(id);
   const safeNumber = (value,fallback=0) => Number.isFinite(value) && value >= 0 ? Math.min(value,1e300) : fallback;
   function format(value,decimals=0) {
-    if (!Number.isFinite(value)) return "∞";
-    const sign = value < 0 ? "-" : "";
-    let n = Math.abs(value);
-    if (n < 1000 || !state.settings.compact) {
-      if (!state.settings.compact && n >= 1000 && n < 1e15) return sign + n.toLocaleString("en-US",{maximumFractionDigits:decimals});
-      if (n < 1000) return sign + n.toLocaleString("en-US",{maximumFractionDigits:decimals});
-    }
-    const tier = Math.min(Math.floor(Math.log10(n)/3),SUFFIXES.length-1);
-    if (tier <= 0) return sign + n.toLocaleString("en-US",{maximumFractionDigits:decimals});
-    const scaled = n / Math.pow(1000,tier);
-    const digits = scaled < 10 ? 2 : scaled < 100 ? 1 : 0;
-    return sign + (digits ? scaled.toFixed(digits).replace(/\.?0+$/,"") : scaled.toFixed(0)) + " " + SUFFIXES[tier];
+    if(!Number.isFinite(value))return "∞";
+    const sign=value<0?"-":"",n=Math.abs(value);
+    if(n<1000000000000 || (!state.settings.compact && n<1000000000000000))
+      return sign+n.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:decimals});
+    const tier=Math.min(Math.floor(Math.log10(n)/3),SUFFIXES.length-1);
+    const scaled=n/Math.pow(1000,tier);
+    const digits=scaled<10?2:scaled<100?1:0;
+    const rounded=scaled.toFixed(digits).replace(/\.?0+$/,"");
+    return sign+rounded+" "+SUFFIXES[tier];
   }
-  const euro = (n,d=0) => "€" + format(n,d);
+  const euro=(n,d=0)=>"$"+format(n,d);
   function duration(seconds) {
     seconds = Math.max(0,Math.floor(seconds));
     const h = Math.floor(seconds/3600),m = Math.floor(seconds%3600/60),s = seconds%60;
@@ -111,20 +120,34 @@
   function businessMultiplier(b) {
     return MILESTONES.reduce((value,m) => value * (has(b.id+"-"+m.count) ? m.mult : 1),1);
   }
-  function baseRate() {
-    let rate=0;
-    for (const b of BUSINESS) rate += state.businesses[b.id] * b.income * businessMultiplier(b);
-    return rate * prestigeBonus() * (hasPrestige("investor") ? 1.1 : 1);
+  function businessUnitRate(b) {
+    let rate=b.income*businessMultiplier(b)*prestigeBonus()*(hasPrestige("investor")?1.1:1);
+    for(const u of SPECIAL_UPGRADES)if(has(u.id)&&(u.effect==="total"||u.effect===b.id))rate*=u.mult;
+    return rate;
   }
+  function businessTotalRate(b) {return state.businesses[b.id]*businessUnitRate(b);}
+  function baseRate() {return BUSINESS.reduce((sum,b)=>sum+businessTotalRate(b),0);}
   function currentRate() {
-    return baseRate() * (buff && buff.type === "income" && buff.until > Date.now() ? buff.mult : 1);
+    const boost=buff&&buff.until>Date.now()&&(buff.type==="income"||buff.type==="goldrush")?buff.mult:1;
+    return baseRate()*boost;
   }
   function clickValue() {
     let value=1;
-    for (const u of CLICK_UPGRADES) if (has(u.id)) value*=u.mult;
-    value *= prestigeBonus() * (hasPrestige("executive") ? 2 : 1);
-    if (buff && buff.type === "click" && buff.until > Date.now()) value*=buff.mult;
+    for(const u of CLICK_UPGRADES)if(has(u.id))value*=u.mult;
+    for(const u of SPECIAL_UPGRADES)if(u.effect==="click"&&has(u.id))value*=u.mult;
+    value*=prestigeBonus()*(hasPrestige("executive")?2:1);
+    if(buff&&buff.until>Date.now()&&(buff.type==="click"||buff.type==="goldrush"))value*=buff.clickMult||buff.mult;
     return value;
+  }
+  function earnBusinesses(seconds,withBuff=true) {
+    const boost=withBuff&&buff&&buff.until>Date.now()&&(buff.type==="income"||buff.type==="goldrush")?buff.mult:1;
+    let total=0;
+    for(const b of BUSINESS){
+      const earned=businessTotalRate(b)*seconds*boost;
+      if(earned>0){state.businessRevenue[b.id]=Math.min(1e300,state.businessRevenue[b.id]+earned);total+=earned;}
+    }
+    addMoney(total);
+    return total;
   }
   function addMoney(value) {
     if (!Number.isFinite(value) || value <= 0) return;
@@ -172,10 +195,10 @@
   const ACHIEVEMENTS = [];
   function achievement(id,name,description,icon,test) {ACHIEVEMENTS.push({id,name,description,icon,test});}
   [
-    [1,"First Euro"],[100,"Pocket Money"],[10000,"Getting Serious"],[1000000,"Millionaire"],
+    [1,"First Dollar"],[100,"Pocket Money"],[10000,"Getting Serious"],[1000000,"Millionaire"],
     [1000000000,"Billionaire"],[1000000000000,"Trillionaire"],[1e15,"Quadrillionaire"],
     [1e18,"Quintillionaire"],[1e21,"Sextillionaire"]
-  ].forEach(([n,name]) => achievement("earn-"+n,name,"Earn "+euro(n)+" total","💶",s=>s.lifetime>=n));
+  ].forEach(([n,name]) => achievement("earn-"+n,name,"Earn "+euro(n)+" total","💵",s=>s.lifetime>=n));
   [1,10,100,1000,10000,100000].forEach((n,i) => achievement("click-"+n,["First Tap","Cash Habit","Busy Hands","Click Addict","Tap Tycoon","Human Machine"][i],"Click the pile "+format(n)+" times","👆",s=>s.totalClicks>=n));
   [1,10,50,250,1000,5000].forEach((n,i) => achievement("business-"+n,["Business Owner","Local Mogul","Entrepreneur","Empire Builder","Market Leader","Everywhere at Once"][i],"Own "+format(n)+" businesses","🏢",s=>sumBusinesses(s)>=n));
   [1,10,100,1000,10000,1000000,1e9,1e12].forEach((n,i) => achievement("rate-"+n,["First Dividend","Steady Stream","Money River","Cash Current","Golden Pipeline","Wealth Engine","Planet Economy","Universal Economy"][i],"Reach "+euro(n)+" per second","📈",s=>currentRate()>=n));
@@ -192,78 +215,105 @@
     }
     if(changed) save();
   }
-  function perimeterSlot(index,total,inset,phase=0) {
-    const edge=1-2*inset,perimeter=4*edge;
-    let distance=(edge/2+(index+phase)*perimeter/total)%perimeter;
-    let x,y;
-    if(distance<edge){x=inset+distance;y=inset;}
-    else if(distance<2*edge){x=1-inset;y=inset+distance-edge;}
-    else if(distance<3*edge){x=1-inset-(distance-2*edge);y=1-inset;}
-    else{x=inset;y=1-inset-(distance-3*edge);}
-    return {x:x*100,y:y*100};
-  }
-  function collectorGroupLabel(amount) {
-    if(amount<1000)return String(amount);
-    const suffixes=["","k","m","b","t","q","Q","s","S"];
-    const tier=Math.min(Math.floor(Math.log10(amount)/3),suffixes.length-1);
-    const scaled=amount/Math.pow(1000,tier);
-    return (scaled<10?scaled.toFixed(1).replace(/\.0$/,""):scaled.toFixed(0))+suffixes[tier];
-  }
-  function collectorVisuals(owned) {
-    const count=Math.min(52,owned),tier=owned<=10?"low":owned<=30?"medium":owned<=75?"high":"army";
-    const slots=[];
-    if(!count)return {tier,slots};
-    const outerCount=Math.min(count,30),innerCount=count-outerCount;
-    const base=Math.floor(owned/count),extra=owned%count;
-    for(let i=0;i<count;i++){
-      const outer=i<outerCount;
-      const point=perimeterSlot(outer?i:i-outerCount,outer?outerCount:innerCount,outer?.07:.13,outer?0:.25);
-      slots.push({x:point.x,y:point.y,group:base+(i<extra?1:0)});
+  const WEALTH_SCENES = [
+    [["coin",39,58,-12,1],["coin",56,60,11,1],["coin",49,43,4,1]],
+    [["coin",28,61,-14,1],["coin",43,67,8,1],["coin",60,67,-8,1],["coin",73,58,12,1],["coin",36,45,8,1],["coin",53,42,-11,1],["coin",65,42,6,1]],
+    [["bill",48,42,-14,1],["coin",27,65,-12,1],["coin",42,69,9,1],["coin",58,67,-8,1],["coin",73,60,13,1],["coin",37,48,5,1]],
+    [["bill",35,40,-18,1],["bill",61,39,16,1],["bill",48,57,-3,1],["coin",32,72,-8,1],["coin",65,72,10,1]],
+    [["stack",31,52,-11,1],["stack",67,53,10,1],["bill",50,34,-5,1],["bill",49,68,5,1],["coin",28,76,5,1],["coin",72,76,-6,1]],
+    [["stack",29,57,-13,1],["stack",68,57,12,1],["stack",50,35,0,1],["stack",50,68,2,1],["bill",33,28,-15,1],["bill",67,29,14,1],["coin",25,79,0,1],["coin",76,79,0,1]],
+    [["stack",28,58,-12,1],["stack",69,58,10,1],["stack",49,42,0,1],["stack",50,72,0,1],["gem",29,30,-15,1],["gem",69,27,12,1],["gem",51,20,0,1],["coin",75,77,0,1]],
+    [["stack",26,61,-12,1],["stack",71,61,11,1],["stack",49,48,0,1],["stack",49,74,0,1],["gem",27,31,-12,1],["gem",73,30,10,1],["crypto",49,24,0,1],["crypto",25,78,-11,.85],["crypto",76,78,11,.85]]
+  ];
+  function buildWealthArt() {
+    pileEl.replaceChildren();
+    for(const [stage,pieces] of WEALTH_SCENES.entries()){
+      const scene=document.createElement("span");
+      scene.className="wealth-scene scene-"+stage;
+      scene.setAttribute("aria-hidden","true");
+      for(const [type,x,y,rotation,scale] of pieces){
+        const piece=document.createElement("span");
+        piece.className="wealth-piece piece-"+type;
+        piece.textContent=type==="coin"||type==="bill"?"$":type==="crypto"?"₿":"";
+        piece.style.setProperty("--x",x+"%");
+        piece.style.setProperty("--y",y+"%");
+        piece.style.setProperty("--rot",rotation+"deg");
+        piece.style.setProperty("--scale",scale);
+        scene.append(piece);
+      }
+      pileEl.append(scene);
     }
-    return {tier,slots};
   }
   function updatePile() {
     const n=state.lifetime;
-    const stage=n>=1e9?4:n>=1e6?3:n>=10000?2:n>=100?1:0;
-    pileEl.className="money-pile stage-"+stage+(pileEl.classList.contains("popped")?" popped":"");
-    const owned=state.businesses.collector,ring=$("collectorRing");
-    if(ring.dataset.owned===String(owned))return;
-    ring.dataset.owned=String(owned);
-    const visual=collectorVisuals(owned);
-    ring.dataset.tier=visual.tier;
-    ring.replaceChildren();
-    for(const [index,slot] of visual.slots.entries()){
-      const item=document.createElement("span");
-      item.className="collector collector-"+(slot.y<=13.1?"top":slot.y>=86.9?"bottom":slot.x<50?"left":"right");
-      item.textContent="€";
-      item.style.setProperty("--x",slot.x+"%");
-      item.style.setProperty("--y",slot.y+"%");
-      item.style.setProperty("--delay",(-index*.07)+"s");
-      if(slot.group>1){
-        const badge=document.createElement("span");
-        badge.className="collector-group";
-        badge.textContent="×"+collectorGroupLabel(slot.group);
-        item.append(badge);
-      }
-      ring.append(item);
-    }
-    $("collectorStatus").textContent=owned?owned.toLocaleString("en-US")+(owned===1?" CASH COLLECTOR AT WORK":" CASH COLLECTORS AT WORK"):"TAP THE CASH TO COLLECT";
+    const thresholds=[0,100,1000,10000,1000000,1000000000,1000000000000,1000000000000000];
+    let stage=0;
+    for(let i=1;i<thresholds.length;i++)if(n>=thresholds[i])stage=i;
+    pileEl.className="money-pile wealth-"+stage+(pileEl.classList.contains("popped")?" popped":"");
   }
   function renderTop() {
     moneyEl.textContent=euro(state.money,state.money<100?1:0);
     rateEl.textContent=euro(currentRate(),currentRate()<10?1:0)+" / second";
     $("lifetime").textContent=euro(state.lifetime);
-    $("perClick").textContent=euro(clickValue(),clickValue()<10?1:0);
-    $("buffBar").textContent=buff&&buff.until>Date.now() ? (buff.type==="income"?"Income":"Clicks")+" ×"+buff.mult+" · "+duration((buff.until-Date.now())/1000)+" left" : "";
+    $("perClick").textContent=euro(clickValue(),clickValue()<10?1:0)+" / click";
+    const active=buff&&buff.until>Date.now();
+    $("buffBar").textContent=active?(buff.type==="goldrush"?"GOLD RUSH":buff.type==="income"?"INCOME BOOST":"CLICK BOOST")+" ×"+buff.mult+" · "+duration((buff.until-Date.now())/1000)+" left":"";
     updatePile();
+  }
+  function compactGroup(amount) {
+    if(amount<1000)return String(amount);
+    const units=["","k","m","b","t","q"],tier=Math.min(Math.floor(Math.log10(amount)/3),units.length-1);
+    const value=amount/Math.pow(1000,tier);
+    return (value<10?value.toFixed(1).replace(/\.0$/,""):value.toFixed(0))+units[tier];
+  }
+  function renderOwned() {
+    const list=$("ownedBusinessList"),total=sumBusinesses();
+    $("ownedTotal").textContent=total.toLocaleString("en-US")+" owned";
+    list.replaceChildren();
+    if(!total){
+      const empty=document.createElement("p");
+      empty.className="owned-empty";
+      empty.textContent="Your first business will appear here.";
+      list.append(empty);
+      return;
+    }
+    for(const b of BUSINESS){
+      const owned=state.businesses[b.id];
+      if(!owned)continue;
+      const row=document.createElement("div");
+      row.className="owned-row"+(owned>30?" dense":owned>10?" medium":"");
+      const head=document.createElement("div");head.className="owned-row-head";
+      const image=document.createElement("img");image.src=b.image;image.alt="";image.loading="lazy";
+      const name=document.createElement("strong");name.textContent=b.name;
+      const amount=document.createElement("span");amount.textContent="×"+owned.toLocaleString("en-US");
+      head.append(image,name,amount);
+      const copies=document.createElement("div");copies.className="owned-copies";
+      const visible=Math.min(24,owned),base=Math.floor(owned/visible),extra=owned%visible;
+      for(let i=0;i<visible;i++){
+        const copy=document.createElement("span");copy.className="owned-copy";
+        const icon=document.createElement("img");icon.src=b.image;icon.alt="";icon.loading="lazy";
+        copy.append(icon);
+        const group=base+(i<extra?1:0);
+        if(group>1){
+          const badge=document.createElement("span");badge.className="copy-group";badge.textContent="×"+compactGroup(group);copy.append(badge);
+        }
+        copies.append(copy);
+      }
+      row.append(head,copies);list.append(row);
+    }
   }
   function allUpgrades() {
     const result=[];
-    for(const u of CLICK_UPGRADES) if(!has(u.id)&&state.lifetime>=u.unlock) result.push(u);
-    for(const b of BUSINESS) for(const m of MILESTONES) {
+    for(const u of CLICK_UPGRADES)if(!has(u.id)&&state.lifetime>=u.unlock)result.push(u);
+    for(const u of SPECIAL_UPGRADES){
+      const earned=state.lifetime>=(u.unlock||0);
+      const owned=!u.requires||Object.entries(u.requires).every(([id,count])=>state.businesses[id]>=count);
+      if(!has(u.id)&&earned&&owned)result.push(u);
+    }
+    for(const b of BUSINESS)for(const m of MILESTONES){
       const id=b.id+"-"+m.count;
       if(!has(id)&&state.businesses[b.id]>=m.count)
-        result.push({id,name:b.name+" "+m.count,icon:b.icon,cost:Math.ceil(b.cost*m.count*(m.count===10?4:m.count===25?5:m.count===50?6:m.count===100?8:10)),mult:m.mult,description:b.name+" income ×"+m.mult});
+        result.push({id,name:b.name+" "+m.count,image:b.image,cost:Math.ceil(b.cost*m.count*(m.count===10?4:m.count===25?5:m.count===50?6:m.count===100?8:10)),mult:m.mult,description:b.name+" output ×"+m.mult});
     }
     return result.sort((a,b)=>a.cost-b.cost);
   }
@@ -277,7 +327,8 @@
     if(!upgrades.length){const empty=document.createElement("div");empty.className="empty-state";empty.textContent="Keep earning. Your next upgrade is on its way.";list.append(empty);return;}
     for(const u of upgrades) {
       const card=document.createElement("div");card.className="upgrade-card"+(state.money>=u.cost?" affordable":"");
-      const icon=document.createElement("div");icon.className="upgrade-icon";icon.textContent=u.icon;
+      const icon=document.createElement("div");icon.className="upgrade-icon";
+      if(u.image){const art=document.createElement("img");art.src=u.image;art.alt="";art.width=39;art.height=39;icon.append(art);}else icon.textContent=u.icon;
       const info=document.createElement("div");info.className="upgrade-info";
       const title=document.createElement("strong");title.textContent=u.name;
       const desc=document.createElement("p");desc.textContent=u.description;
@@ -291,23 +342,75 @@
     state.money-=u.cost;state.upgrades.push(u.id);playTone(880);toast(u.name+" purchased");
     afterAction();
   }
+  function tooltipRow(label,value) {
+    const row=document.createElement("div");row.className="tooltip-stat";
+    const name=document.createElement("span");name.textContent=label;
+    const amount=document.createElement("strong");amount.textContent=value;
+    row.append(name,amount);return row;
+  }
+  function showBusinessTooltip(b,card) {
+    tooltipBusinessId=b.id;
+    const tip=$("businessTooltip");tip.replaceChildren();
+    const head=document.createElement("div");head.className="tooltip-head";
+    const art=document.createElement("img");art.src=b.image;art.alt="";
+    const title=document.createElement("strong");title.textContent=b.name;
+    head.append(art,title);tip.append(head);
+    const owned=state.businesses[b.id],total=currentRate();
+    tip.append(
+      tooltipRow("Owned",owned.toLocaleString("en-US")),
+      tooltipRow("One produces",euro(businessUnitRate(b),2)+"/sec"),
+      tooltipRow("All produce",euro(businessTotalRate(b),2)+"/sec"),
+      tooltipRow("Lifetime produced",euro(state.businessRevenue[b.id])),
+      tooltipRow("Share of income",total?format(businessTotalRate(b)/total*100,1)+"%":"0%")
+    );
+    tip.hidden=false;
+    const rect=card.getBoundingClientRect();
+    const pageWidth=window.innerWidth||1200,pageHeight=window.innerHeight||800;
+    const left=rect.left>=300?rect.left-290:rect.right+10;
+    tip.style.left=Math.max(8,Math.min(left,pageWidth-288))+"px";
+    tip.style.top=Math.max(8,Math.min(rect.top,pageHeight-(tip.offsetHeight||265)-8))+"px";
+  }
+  function hideBusinessTooltip() {$("businessTooltip").hidden=true;tooltipBusinessId=null;}
   function renderBusinesses() {
-    const list=$("businessList");list.replaceChildren();
-    for(const b of BUSINESS) {
+    const list=$("businessList");
+    for(const b of BUSINESS){
+      let row=businessRows.get(b.id);
+      if(!row){
+        const card=document.createElement("div");card.className="business-card";
+        const imageBox=document.createElement("div");imageBox.className="business-image";
+        const image=document.createElement("img");image.src=b.image;image.alt="";image.loading="lazy";image.decoding="async";imageBox.append(image);
+        const info=document.createElement("div");info.className="business-info";info.tabIndex=0;info.setAttribute("aria-label",b.name+" details");
+        const title=document.createElement("strong");title.textContent=b.name;
+        const detail=document.createElement("p");
+        const count=document.createElement("span");count.className="business-owned";
+        info.append(title,detail,count);
+        const button=document.createElement("button");button.type="button";
+        const label=document.createElement("span"),cost=document.createElement("small");button.append(label,cost);
+        button.addEventListener("click",()=>buyBusiness(b));
+        card.append(imageBox,info,button);list.append(card);
+        card.addEventListener("mouseenter",()=>showBusinessTooltip(b,card));
+        card.addEventListener("mouseleave",hideBusinessTooltip);
+        info.addEventListener("focus",()=>showBusinessTooltip(b,card));
+        info.addEventListener("blur",hideBusinessTooltip);
+        row={card,detail,count,button,label,cost};
+        businessRows.set(b.id,row);
+      }
       const owned=state.businesses[b.id],want=displayedQuantity(b),quantity=selectedQuantity(b);
-      const price=totalCost(b,owned,want);
-      const card=document.createElement("div");
-      card.className="business-card"+(quantity>0?" available":owned===0?" locked":"");
-      const icon=document.createElement("div");icon.className="business-icon";icon.textContent=b.icon;
-      const info=document.createElement("div");info.className="business-info";
-      const title=document.createElement("strong");title.textContent=b.name;
-      const detail=document.createElement("p");
-      detail.textContent=euro(b.income*businessMultiplier(b)*prestigeBonus()*(hasPrestige("investor")?1.1:1),b.income<10?1:0)+"/sec each";
-      const count=document.createElement("span");count.className="business-owned";count.textContent="OWNED "+format(owned);
-      info.append(title,detail,count);
-      const button=makeButton("BUY ×"+want,quantity===0,()=>buyBusiness(b));
-      const cost=document.createElement("small");cost.textContent=euro(price);
-      button.append(cost);card.append(icon,info,button);list.append(card);
+      const price=totalCost(b,owned,want||1);
+      row.card.className="business-card"+(quantity>0?" available":owned===0?" locked":"");
+      row.detail.hidden=owned===0;
+      row.count.hidden=owned===0;
+      if(owned){
+        row.detail.textContent=euro(businessUnitRate(b),b.income<10?2:0)+"/sec each";
+        row.count.textContent="OWNED "+owned.toLocaleString("en-US");
+      }
+      row.label.textContent="BUY ×"+want;
+      row.cost.textContent=euro(price);
+      row.button.disabled=quantity===0;
+    }
+    if(tooltipBusinessId){
+      const active=BUSINESS.find(b=>b.id===tooltipBusinessId);
+      if(active)showBusinessTooltip(active,businessRows.get(active.id).card);
     }
   }
   function buyBusiness(b) {
@@ -383,7 +486,7 @@
     state.empireSpent+=p.cost;state.prestigeUpgrades.push(p.id);toast(p.name+" invested");playTone(940);afterAction();
   }
   function afterAction() {
-    checkAchievements();renderTop();renderCurrent();save();
+    checkAchievements();renderTop();renderOwned();renderCurrent();save();
   }
   function renderCurrent() {
     if(activeTab==="upgrades")renderUpgrades();
@@ -416,8 +519,8 @@
     const s=defaultState();
     for(const key of ["money","runEarned","lifetime","empireTotal","empireSpent","rebirths","totalClicks","businessesPurchased","goldenClicked","highestRate","totalPlaytime","lastPlayed"])
       s[key]=safeNumber(raw[key],s[key]);
-    for(const b of BUSINESS) s.businesses[b.id]=Math.floor(safeNumber(raw.businesses?.[b.id]));
-    const validUpgrades=new Set([...CLICK_UPGRADES.map(u=>u.id),...BUSINESS.flatMap(b=>MILESTONES.map(m=>b.id+"-"+m.count))]);
+    for(const b of BUSINESS){s.businesses[b.id]=Math.floor(safeNumber(raw.businesses?.[b.id]));s.businessRevenue[b.id]=safeNumber(raw.businessRevenue?.[b.id]);}
+    const validUpgrades=new Set([...CLICK_UPGRADES.map(u=>u.id),...SPECIAL_UPGRADES.map(u=>u.id),...BUSINESS.flatMap(b=>MILESTONES.map(m=>b.id+"-"+m.count))]);
     s.upgrades=Array.isArray(raw.upgrades)?[...new Set(raw.upgrades.filter(x=>validUpgrades.has(x)))]:[];
     const validAchievements=new Set(ACHIEVEMENTS.map(a=>a.id));
     s.achievements=Array.isArray(raw.achievements)?[...new Set(raw.achievements.filter(x=>validAchievements.has(x)))]:[];
@@ -469,7 +572,7 @@
         const keep={lifetime:state.lifetime,achievements:state.achievements,prestigeUpgrades:state.prestigeUpgrades,
           empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
           totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
-          highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,settings:state.settings};
+          highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings};
         state=Object.assign(defaultState(),keep);
         if(hasPrestige("automation")){state.businesses.collector=10;state.businesses.lemonade=5;}
         buff=null;goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay();
@@ -488,19 +591,20 @@
     goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay()*(hasPrestige("lucky")?.7:1);
     state.goldenClicked++;
     const roll=Math.random();
-    if(roll<.32){buff={type:"income",mult:7,until:Date.now()+30000};toast("Golden Bill: income ×7 for 30 seconds!");}
-    else if(roll<.65){const prize=Math.max(100,baseRate()*180,clickValue()*50);addMoney(prize);toast("Golden Bill: +"+euro(prize)+"!");}
-    else if(roll<.88){buff={type:"click",mult:20,until:Date.now()+15000};toast("Golden Bill: clicks ×20 for 15 seconds!");}
+    if(roll<.25){buff={type:"goldrush",mult:10,clickMult:10,until:Date.now()+30000};toast("GOLD RUSH! Income and clicks ×10 for 30 seconds!");setTicker("GOLD RUSH • Every move turns to gold for 30 seconds.");}
+    else if(roll<.49){buff={type:"income",mult:7,until:Date.now()+30000};toast("Golden Bill: income ×7 for 30 seconds!");}
+    else if(roll<.73){const prize=Math.max(100,baseRate()*180,clickValue()*50);addMoney(prize);toast("Golden Bill: +"+euro(prize)+"!");}
+    else if(roll<.9){buff={type:"click",mult:20,until:Date.now()+15000};toast("Golden Bill: clicks ×20 for 15 seconds!");}
     else {buff={type:"income",mult:12,until:Date.now()+15000};toast("Golden Bill: businesses ×12 for 15 seconds!");}
+    applySettings();
     playTone(1200);afterAction();
   }
   function applyOffline() {
     const away=Math.max(0,Math.min(Date.now()-state.lastPlayed,7*24*3600000));
     if(away<60000)return;
     const capped=Math.min(away/1000,(hasPrestige("nightshift")?16*3600:OFFLINE_CAP));
-    const earned=baseRate()*capped;
+    const earned=earnBusinesses(capped,false);
     if(earned>0){
-      addMoney(earned);
       const wrap=document.createElement("div"),p=document.createElement("p");
       p.textContent="You were away for "+duration(away/1000)+". Your businesses earned "+euro(earned)+". Offline earnings are capped at "+(hasPrestige("nightshift")?16:10)+" hours.";
       wrap.append(p);modal("Welcome Back",wrap,[{label:"Collect",action:()=>{}}]);
@@ -509,31 +613,67 @@
   function applySettings() {
     document.documentElement.classList.toggle("light",state.settings.light);
     document.documentElement.classList.toggle("reduce-motion",!state.settings.animations);
+    document.documentElement.classList.toggle("gold-rush",Boolean(buff&&buff.type==="goldrush"&&buff.until>Date.now()));
+  }
+  const MARKET_NEWS=[
+    "Local entrepreneur discovers that small change adds up.",
+    "Lemonade futures remain refreshingly optimistic.",
+    "Cash Collectors request more pockets.",
+    "Analysts predict a promising day for your empire.",
+    "Rumor: a golden bill has been spotted nearby.",
+    "Your next big business could be one purchase away.",
+    "The market opens early for ambitious clickers."
+  ];
+  function setTicker(message) {
+    const el=$("tickerText");
+    el.textContent=message;
+    el.classList.remove("ticker-pop");
+    void el.offsetWidth;
+    el.classList.add("ticker-pop");
+  }
+  function rotateTicker() {
+    tickerIndex=(tickerIndex+1)%MARKET_NEWS.length;
+    if(!(buff&&buff.type==="goldrush"&&buff.until>Date.now()))setTicker(MARKET_NEWS[tickerIndex]);
+    tickerNext=Date.now()+11500;
+  }
+  function spawnAmbientBill() {
+    ambientNext=Date.now()+2500+Math.random()*3500;
+    if(!state.settings.animations||!state.settings.particles)return;
+    const layer=$("particleLayer");
+    if(layer.children.length>=8)return;
+    const bill=document.createElement("span");
+    bill.className="ambient-bill";
+    bill.style.setProperty("--x",(5+Math.random()*90)+"%");
+    bill.style.setProperty("--y","-18px");
+    bill.style.setProperty("--rot",(Math.random()*70-35)+"deg");
+    layer.append(bill);
+    setTimeout(()=>bill.remove(),5100);
   }
   function tick() {
     const now=Date.now(),elapsed=Math.max(0,(now-lastTick)/1000);lastTick=now;
     if(elapsed>0){
       const productive=Math.min(elapsed,hasPrestige("nightshift")?16*3600:OFFLINE_CAP);
-      addMoney(currentRate()*productive);
+      earnBusinesses(productive,true);
       state.totalPlaytime+=Math.min(elapsed,productive);
     }
-    if(buff&&now>=buff.until){buff=null;toast("Bonus ended");}
+    if(buff&&now>=buff.until){buff=null;applySettings();toast("Bonus ended");}
     if(goldenExpires&&now>=goldenExpires){goldenExpires=0;$("goldenBill").hidden=true;goldenNext=now+randomBillDelay()*(hasPrestige("lucky")?.7:1);}
     if(!goldenExpires&&now>=goldenNext)spawnGolden();
     state.highestRate=Math.max(state.highestRate,currentRate());
+    if(now>=ambientNext)spawnAmbientBill();
+    if(now>=tickerNext)rotateTicker();
     renderTop();
     if(now-renderTimer>600){renderCurrent();renderTimer=now;}
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
   }
   function init() {
-    load();applySettings();applyOffline();
+    buildWealthArt();load();applySettings();applyOffline();
     pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
       buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();
     }));
-    $("mobileStore").addEventListener("click",()=>$("storeColumn").scrollIntoView({behavior:state.settings.animations?"smooth":"instant"}));
     $("exportSave").addEventListener("click",exportSave);
     $("importSave").addEventListener("click",importSave);
     $("resetGame").addEventListener("click",resetGame);
@@ -543,9 +683,9 @@
     document.addEventListener("keydown",event=>{if(event.key==="Escape")closeModal();});
     window.addEventListener("pagehide",save);
     document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
-    renderTop();renderCurrent();checkAchievements();setInterval(tick,100);
+    renderTop();renderOwned();renderCurrent();checkAchievements();rotateTicker();setInterval(tick,100);
     setInterval(save,10000);
   }
-  window.CashEmpireMath={totalCost,maxAffordable,format,collectorVisuals,configs:BUSINESS};
+  window.CashEmpireMath={totalCost,maxAffordable,format,businessUnitRate,earnBusinesses,configs:BUSINESS};
   init();
 })();
