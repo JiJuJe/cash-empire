@@ -233,3 +233,9 @@ h1,h2,h3,p{margin-top:0}
 .upgrade-icon img{width:39px;height:39px;object-fit:contain}
 .light.gold-rush .play-column,.light.gold-rush .content-column,.light.gold-rush .store-column{background:linear-gradient(150deg,#765017,#3f2d16)!important;color:#fff1cc}
 .light.gold-rush .market-ticker{background:#9a6b21;color:#fff3cd}
+
+/* Keep the opening wealth stage prominent and phone tabs fully visible. */
+.scene-0{transform:scale(1.5)}
+.scene-1{transform:scale(1.18)}
+.ticker-text{min-width:0}
+@media(max-width:600px){.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}.tab{min-width:0;white-space:normal;font-size:9px;letter-spacing:.025em;padding-inline:2px}}
