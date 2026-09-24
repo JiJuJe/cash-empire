@@ -17,6 +17,7 @@
         <div class="logo"><span class="brand-mark">€</span><div><small>BUILD YOUR FORTUNE</small><h1>CASH EMPIRE</h1></div></div>
         <div class="balance-card"><span class="eyebrow">YOUR CASH</span><div id="balance" class="balance">€0</div><div class="rate"><span class="pulse-dot"></span><span id="rate">€0 / second</span></div></div>
         <div id="pileZone" class="pile-zone">
+          <div id="particleLayer" class="particle-layer" aria-hidden="true"></div>
           <div class="pile-halo"></div>
           <div id="collectorRing" class="collector-ring" aria-hidden="true"></div>
           <button id="moneyPile" class="money-pile stage-0" type="button" aria-label="Collect cash from the money pile">
@@ -34,7 +35,7 @@
           <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
           <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>€</span><small>GOLDEN BILL</small></button>
         </div>
-        <div class="click-hint">TAP THE CASH TO COLLECT</div>
+        <div id="collectorStatus" class="collector-status">TAP THE CASH TO COLLECT</div>
         <div class="play-footer"><div><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">€0</strong></div><div><span class="eyebrow">PER CLICK</span><strong id="perClick">€1</strong></div></div>
         <div id="buffBar" class="buff-bar" aria-live="polite"></div>
       </section>
