@@ -100,7 +100,7 @@ function applyAction(current,action,now,entitled){
   advance(s,now,entitled);
   if(action.type==="click_batch"){
     const count=action.count;
-    const maximum=Math.min(180,Math.floor(Math.max(0,now-previousAccrual)/55)+2);
+    const maximum=Math.max(1,Math.min(120,Math.ceil(Math.max(0,now-previousAccrual)/80)));
     if(!Number.isInteger(count)||count<1||count>maximum)throw Error("Invalid click batch.");
     award(s,clickRate(s,entitled)*count);s.totalClicks+=count;s.lastClickMs=now;
   }else if(action.type==="golden"){
@@ -394,3 +394,4 @@ export default {
   }
 };
 export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,verifyStripeSignature,loadProgress};
+
