@@ -24,3 +24,18 @@ jobs:
           path: CashEmpire
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify live game assets
+        shell: bash
+        run: |
+          for attempt in {1..12}; do
+            html=$(curl -fsSL "https://jijuje.github.io/cash-empire/?v=$GITHUB_SHA" || true)
+            js=$(curl -fsSL "https://jijuje.github.io/cash-empire/script.js?v=$GITHUB_SHA" || true)
+            css=$(curl -fsSL "https://jijuje.github.io/cash-empire/style.css?v=$GITHUB_SHA" || true)
+            if [[ "$html" == *"collectors-2"* && "$js" == *"collectorVisuals"* && "$css" == *"collector-group"* ]]; then
+              echo "Live game assets match the deployed collector layout."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Live game assets did not match the deployment."
+          exit 1
