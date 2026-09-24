@@ -294,3 +294,40 @@ h1,h2,h3,p{margin-top:0}
 .world-panel .owned-copy{animation:none}
 .world-panel .owned-copy:nth-child(4n+1){animation:businessBreathe 3.8s ease-in-out var(--delay,0s) infinite}
 .reduce-motion .world-panel .owned-copy{animation:none}
+
+/* Leaderboard and premium store use the existing navigation and dialog palette. */
+.feature-modal{position:relative;display:flex;flex-direction:column;width:min(100%,760px);max-height:90vh;overflow:hidden;background:#1b3b2c;border:1px solid #9aaf75;border-radius:15px;box-shadow:0 20px 80px #0009}
+.feature-modal.store-view{width:min(100%,520px)}
+.feature-body{padding:25px;overflow-y:auto;scrollbar-color:#719b72 transparent}
+.feature-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-right:28px;margin-bottom:15px}
+.feature-header h2{font-size:25px;margin:4px 0 0}
+.feature-header button,.premium-buy{border:0;border-radius:7px;padding:10px 14px;background:var(--gold);color:#223627;font-size:12px;font-weight:850;box-shadow:0 3px 0 #957033}
+.feature-header button:disabled,.premium-buy:disabled{opacity:.58;cursor:not-allowed;box-shadow:none}
+.feature-message{padding:18px;border:1px dashed #648667;border-radius:9px;color:var(--muted);font-size:13px;line-height:1.5;text-align:center}
+.feature-message.error{border-color:#c88470;color:#ffcfbf}
+.feature-message button{display:block;margin:10px auto 0;border:1px solid #9db477;border-radius:6px;padding:7px 12px;background:#315d3d;color:var(--cream);font:inherit}
+.leaderboard-list{max-height:58vh;overflow-y:auto;border:1px solid #4f7655;border-radius:10px}
+.leaderboard-row{display:grid;grid-template-columns:55px minmax(110px,1.4fr) minmax(125px,1fr) 85px;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #416748;font-size:13px;font-variant-numeric:tabular-nums}
+.leaderboard-row:last-child{border-bottom:0}
+.leaderboard-head{position:sticky;top:0;z-index:1;background:#274c34;color:#e0ce92;font-size:10px;font-weight:850;letter-spacing:.07em;text-transform:uppercase}
+.leaderboard-row .rank{font-weight:850;color:#e7c77a}
+.leaderboard-row .username{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.leaderboard-row .cash{text-align:right}
+.leaderboard-row .rebirths{text-align:right;color:var(--muted)}
+.leaderboard-row.is-me{background:#49694480;box-shadow:inset 3px 0 var(--gold)}
+.personal-rank{margin-top:12px;padding:10px 0;border-top:1px solid #6e8e69}
+.premium-card{display:grid;grid-template-columns:70px 1fr auto;align-items:center;gap:15px;padding:18px;border:1px solid #6e955f;border-radius:12px;background:linear-gradient(135deg,#2b5538,#193628)}
+.premium-icon{display:grid;place-items:center;width:64px;height:64px;border-radius:14px;background:linear-gradient(135deg,#ffe39b,#c98f37);color:#23452c;font-size:26px;font-weight:900;box-shadow:0 4px 0 #8e6429}
+.premium-info strong{display:block;font-size:17px}
+.premium-info p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.4}
+.premium-price{margin-top:7px;color:#f3d68e;font-weight:850}
+.premium-note{margin:13px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.premium-state{margin-top:12px;padding:9px 10px;border-radius:8px;background:#294b35;color:#f6df9e;font-size:12px}
+.light .feature-modal{background:#f0f4e9;color:#1b3427}
+.light .feature-message{color:#45634a}
+.light .leaderboard-head{background:#d8e7d3;color:#47643f}
+.light .leaderboard-row{border-color:#b5cdb1}
+.light .premium-card{background:#e0efdc;color:#1b3427}
+.light .premium-note,.light .premium-info p{color:#4e6a54}
+@media(max-width:1500px){.progress-area .tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0}.progress-area .tab{min-width:0;white-space:normal;padding:15px 2px 12px;font-size:9px;letter-spacing:.015em;line-height:1.15}}
+@media(max-width:600px){.progress-area .tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.progress-area .tab{font-size:10px;padding:11px 2px}.feature-body{padding:18px 12px}.leaderboard-head{display:none}.leaderboard-row{grid-template-columns:34px minmax(0,1fr) auto;gap:2px 8px;font-size:11px}.leaderboard-row .rank{grid-row:1/3}.leaderboard-row .cash{font-weight:750}.leaderboard-row .rebirths{grid-column:2/4;text-align:left}.premium-card{grid-template-columns:56px 1fr;gap:10px}.premium-icon{width:52px;height:52px;font-size:21px}.premium-buy{grid-column:1/3;width:100%}}

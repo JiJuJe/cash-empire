@@ -19,6 +19,10 @@ Click the cash pile to earn money. Buy businesses for automatic income, collect 
 - `CashEmpire/index.html` — interface
 - `CashEmpire/style.css` — artwork, layout, and animation
 - `CashEmpire/script.js` — game configuration and systems
-- `CashEmpire/assets/` — reserved for local assets
+- `CashEmpire/assets/` — local business artwork
 
 All prices and production values are in configuration arrays near the top of `script.js`.
+
+## Leaderboard and premium Store
+
+The game includes Leaderboard and Store navigation. A Cloudflare Worker and D1 migration for verified account progress and the optional €2.00 2x Money checkout are in `worker/` and `migrations/`. No example players or fake purchase completion is shown. See [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md) for the required Cloudflare and optional Stripe setup. Guest saves stay local and keep working on GitHub Pages.

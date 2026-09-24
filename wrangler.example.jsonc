@@ -1,0 +1,17 @@
+{
+  // Copy to wrangler.jsonc after creating the D1 database. Keep the existing Worker name if different.
+  "name": "cash-empire",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-24",
+  "assets": {
+    "directory": "./CashEmpire",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "cash-empire",
+    "database_id": "REPLACE_WITH_D1_DATABASE_UUID",
+    "migrations_dir": "migrations"
+  }]
+}

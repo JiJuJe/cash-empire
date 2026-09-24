@@ -65,6 +65,9 @@
     settings:{sound:true,animations:true,particles:true,compact:false,light:false}
   });
   let state = defaultState();
+  let premiumMultiplier = 1;
+  let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false};
+  let featureMode = null;
   let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
   let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
   let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
@@ -123,7 +126,7 @@
   function businessUnitRate(b) {
     let rate=b.income*businessMultiplier(b)*prestigeBonus()*(hasPrestige("investor")?1.1:1);
     for(const u of SPECIAL_UPGRADES)if(has(u.id)&&(u.effect==="total"||u.effect===b.id))rate*=u.mult;
-    return rate;
+    return rate * premiumMultiplier;
   }
   function businessTotalRate(b) {return state.businesses[b.id]*businessUnitRate(b);}
   function baseRate() {return BUSINESS.reduce((sum,b)=>sum+businessTotalRate(b),0);}
@@ -137,7 +140,7 @@
     for(const u of SPECIAL_UPGRADES)if(u.effect==="click"&&has(u.id))value*=u.mult;
     value*=prestigeBonus()*(hasPrestige("executive")?2:1);
     if(buff&&buff.until>Date.now()&&(buff.type==="click"||buff.type==="goldrush"))value*=buff.clickMult||buff.mult;
-    return value;
+    return value * premiumMultiplier;
   }
   function earnBusinesses(seconds,withBuff=true) {
     const boost=withBuff&&buff&&buff.until>Date.now()&&(buff.type==="income"||buff.type==="goldrush")?buff.mult:1;
@@ -532,6 +535,136 @@
     $("modalBackdrop").hidden=false;
   }
   function closeModal() {$("modalBackdrop").hidden=true;}
+  function featureElement(tag,className,textValue) {
+    const node=document.createElement(tag);
+    if(className)node.className=className;
+    if(textValue!==undefined)node.textContent=textValue;
+    return node;
+  }
+  function openFeature(name) {
+    featureMode=name;
+    $("featureModal").className="feature-modal"+(name==="store"?" store-view":"");
+    $("featureBackdrop").hidden=false;
+    if(name==="leaderboard")renderLeaderboard();
+    else {renderPremiumStore();refreshPremiumStatus().then(()=>{renderTop();renderOwned();renderCurrent();});}
+  }
+  function closeFeature() {
+    featureMode=null;
+    $("featureBackdrop").hidden=true;
+  }
+  async function apiJson(path,options={}) {
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),3500);
+    try {
+      const response=await fetch(path,{credentials:"same-origin",cache:"no-store",...options,signal:controller.signal});
+      let data;
+      try{data=await response.json();}catch(_){throw Error("Service unavailable.");}
+      if(!response.ok)throw Error(typeof data.error==="string"?data.error:"Service unavailable.");
+      return data;
+    } finally {clearTimeout(timeout);}
+  }
+  async function refreshPremiumStatus() {
+    try {
+      const data=await apiJson("/api/store/status");
+      premiumStatus={
+        authenticated:data.authenticated===true,
+        paymentsAvailable:data.paymentsAvailable===true,
+        owned:data.authenticated===true&&data.entitlements?.double_money===true
+      };
+      premiumMultiplier=premiumStatus.owned?2:1;
+    } catch (_) {
+      premiumStatus={authenticated:false,paymentsAvailable:false,owned:false};
+      premiumMultiplier=1;
+    }
+    if(featureMode==="store")renderPremiumStore();
+    return premiumStatus;
+  }
+  function featureHeader(title,buttonLabel,handler) {
+    const header=featureElement("div","feature-header");
+    const titleBox=featureElement("div");
+    titleBox.append(featureElement("span","eyebrow","CASH EMPIRE"),featureElement("h2","",title));
+    header.append(titleBox);
+    if(buttonLabel)header.append(makeButton(buttonLabel,false,handler));
+    return header;
+  }
+  function leaderboardRow(entry,isPersonal=false) {
+    const row=featureElement("div","leaderboard-row"+(entry.isSelf?" is-me":"")+(isPersonal?" personal-rank":""));
+    const rank=featureElement("span","rank","#"+entry.rank);
+    const name=featureElement("span","username",entry.username);
+    const cash=featureElement("span","cash",euro(entry.lifetimeCash));
+    const rebirths=featureElement("span","rebirths",format(entry.rebirths)+" rebirths");
+    row.append(rank,name,cash,rebirths);
+    return row;
+  }
+  async function renderLeaderboard() {
+    const body=$("featureBody");body.className="feature-body";body.replaceChildren();
+    body.append(featureHeader("Leaderboard","Refresh",renderLeaderboard));
+    const status=featureElement("div","feature-message","Loading the Top 100...");
+    body.append(status);
+    try {
+      const data=await apiJson("/api/leaderboard");
+      if(featureMode!=="leaderboard")return;
+      status.remove();
+      const players=Array.isArray(data.players)?data.players.slice(0,100):[];
+      if(!players.length){
+        body.append(featureElement("div","feature-message","Sign in to appear on the leaderboard."));
+      } else {
+        const list=featureElement("div","leaderboard-list");
+        const heading=featureElement("div","leaderboard-row leaderboard-head");
+        for(const label of ["Rank","Username","Lifetime Cash","Rebirths"])heading.append(featureElement("span","",label));
+        list.append(heading);
+        for(const player of players){
+          if(!Number.isInteger(player.rank)||player.rank<1||player.rank>100||typeof player.username!=="string")continue;
+          list.append(leaderboardRow(player));
+        }
+        body.append(list);
+      }
+      if(data.me&&Number.isInteger(data.me.rank)&&data.me.rank>100){
+        const own=leaderboardRow({...data.me,isSelf:true},true);
+        body.append(own);
+      }
+      if(!data.authenticated)body.append(featureElement("p","premium-note","Sign in to appear on the leaderboard."));
+    } catch (_) {
+      if(featureMode!=="leaderboard")return;
+      status.className="feature-message error";
+      status.textContent="Leaderboard is unavailable right now.";
+      status.append(makeButton("Try again",false,renderLeaderboard));
+    }
+  }
+  async function beginPremiumCheckout(button,note) {
+    if(premiumStatus.owned)return;
+    if(!premiumStatus.paymentsAvailable){
+      note.textContent="Payments are not available yet.";
+      return;
+    }
+    if(!premiumStatus.authenticated){
+      note.textContent="Sign in before buying 2x Money.";
+      return;
+    }
+    button.disabled=true;
+    note.textContent="Opening secure checkout...";
+    try {
+      const data=await apiJson("/api/store/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+      if(typeof data.checkoutUrl!=="string"||!data.checkoutUrl.startsWith("https://checkout.stripe.com/"))throw Error("Checkout is unavailable.");
+      window.location.assign(data.checkoutUrl);
+    } catch (error) {
+      note.textContent=error.message||"Payments are not available yet.";
+      button.disabled=false;
+    }
+  }
+  function renderPremiumStore() {
+    const body=$("featureBody");body.className="feature-body";body.replaceChildren();
+    body.append(featureHeader("Store"));
+    const card=featureElement("div","premium-card");
+    const icon=featureElement("div","premium-icon","2×");
+    const info=featureElement("div","premium-info");
+    info.append(featureElement("strong","","2x Money"),featureElement("p","","Permanent 2x money earned."),featureElement("div","premium-price","€2.00"));
+    const buy=makeButton(premiumStatus.owned?"Owned ✓":"Buy",premiumStatus.owned,()=>beginPremiumCheckout(buy,note));
+    buy.className="premium-buy";
+    const note=featureElement("p","premium-note",premiumStatus.owned?"Your account owns this permanent upgrade.":premiumStatus.paymentsAvailable?(premiumStatus.authenticated?"Secure checkout opens after you press Buy.":"Sign in to buy 2x Money."):"Payments are not available yet.");
+    card.append(icon,info,buy);body.append(card,note);
+    if(premiumStatus.owned)body.append(featureElement("div","premium-state","2x Money is active for this signed-in account."));
+  }
   function save() {
     try {state.lastPlayed=Date.now();localStorage.setItem(SAVE_KEY,JSON.stringify(state));}
     catch (_) {toast("Browser storage is unavailable. Export your save to keep progress.");}
@@ -688,11 +821,13 @@
     if(now-renderTimer>600){renderCurrent();renderTimer=now;}
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
   }
-  function init() {
-    buildWealthArt();load();applySettings();applyOffline();
+  async function init() {
+    buildWealthArt();load();applySettings();renderTop();renderOwned();
+    await refreshPremiumStatus();
+    applyOffline();
     pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
-    document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
+    document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
       buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();
     }));
@@ -701,8 +836,10 @@
     $("resetGame").addEventListener("click",resetGame);
     $("rebirthButton").addEventListener("click",rebirth);
     $("modalClose").addEventListener("click",closeModal);
+    $("featureClose").addEventListener("click",closeFeature);
+    $("featureBackdrop").addEventListener("click",event=>{if(event.target===$("featureBackdrop"))closeFeature();});
     $("modalBackdrop").addEventListener("click",event=>{if(event.target===$("modalBackdrop"))closeModal();});
-    document.addEventListener("keydown",event=>{if(event.key==="Escape")closeModal();});
+    document.addEventListener("keydown",event=>{if(event.key==="Escape"){closeModal();closeFeature();}});
     window.addEventListener("pagehide",save);
     document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
     renderTop();renderOwned();renderCurrent();checkAchievements();rotateTicker();setInterval(tick,100);
