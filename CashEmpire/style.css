@@ -1,7 +1,7 @@
 :root{
   --bg:#0e2119;--panel:#153026;--panel-deep:#10271f;--panel-soft:#1d3b2d;
   --line:#335743;--cream:#f7f3e5;--muted:#abc2ae;--gold:#e6be67;--green:#79cc8a;
-  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  font-family:Helvetica,Arial,"Segoe UI",sans-serif;
   color:var(--cream);background:var(--bg)
 }
 *{box-sizing:border-box}
@@ -333,3 +333,78 @@ h1,h2,h3,p{margin-top:0}
 @media(max-width:600px){.progress-area .tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.progress-area .tab{font-size:10px;padding:11px 2px}.feature-body{padding:18px 12px}.leaderboard-head{display:none}.leaderboard-row{grid-template-columns:34px minmax(0,1fr) auto;gap:2px 8px;font-size:11px}.leaderboard-row .rank{grid-row:1/3}.leaderboard-row .cash{font-weight:750}.leaderboard-row .rebirths{grid-column:2/4;text-align:left}.premium-card{grid-template-columns:56px 1fr;gap:10px}.premium-icon{width:52px;height:52px;font-size:21px}.premium-buy{grid-column:1/3;width:100%}}
 
 .feature-header{padding-right:48px}
+
+/* Account controls, wealth tiers, and compact mobile sizing. */
+.market-ticker{overflow:visible}
+.account-controls{position:relative;flex:none;font-size:11px}
+.account-controls a,.account-controls>button,.fit-screen-toggle{border:1px solid #806a3e;border-radius:7px;background:#fbebbb;color:#243e2b;font-size:11px;font-weight:750;padding:6px 9px;text-decoration:none;white-space:nowrap}
+.account-menu{position:absolute;right:0;top:calc(100% + 8px);width:185px;padding:10px;display:grid;gap:5px;border:1px solid #bda36b;border-radius:9px;background:#f7edd0;color:#243e2b;box-shadow:0 12px 25px #0006;z-index:80}
+.account-menu[hidden]{display:none}
+.account-menu strong{overflow:hidden;text-overflow:ellipsis}
+.account-menu button{padding:7px;border:0;border-radius:5px;background:#e5d6a6;text-align:left;color:#243e2b}
+.fit-screen-toggle{display:none}
+.world-panel .owned-row{min-height:0;margin-bottom:6px;padding:6px 8px}
+.world-panel .owned-row-head{margin-bottom:4px}
+.world-panel .owned-row-head>img{width:32px;height:32px}
+.world-panel .owned-copies{min-height:27px;gap:3px}
+.world-panel .owned-copy{width:30px;height:30px}
+.world-panel .owned-row.medium .owned-copy{width:26px;height:26px}
+.world-panel .owned-row.dense .owned-copy{width:24px;height:24px}
+:root{transition:background .4s,color .4s}
+.diamond-theme{--bg:#0c1d2b;--panel:#173448;--panel-deep:#102838;--panel-soft:#1e445a;--line:#477b96;--gold:#b8eaff;--green:#78d8ed}
+.diamond-theme .play-column{background:radial-gradient(circle at 50% 34%,#276987,#133e57 42%,#0c2536 80%);border-color:#6ac5e4}
+.diamond-theme .content-column,.diamond-theme .progress-area,.diamond-theme .tabs{background:#102b3c}
+.diamond-theme .world-panel{background:radial-gradient(circle at 50% 0,#28627a,#103047 65%,#092436);border-color:#81d7ee}
+.diamond-theme .store-column{background:#173448;border-color:#6ac5e4}
+.diamond-theme .business-card,.diamond-theme .upgrade-card{border-color:#4b8ba6}
+.diamond-theme .market-ticker{background:#a8e4f3;border-color:#5db6d0}
+.diamond-theme .wealth-backdrop{background:radial-gradient(circle,#8be6ff42,#297da72a 55%,transparent 75%);box-shadow:0 0 36px #45bcf538}
+.luxury-tier .money-pile{filter:drop-shadow(0 12px 12px #34b7eeaa)}
+.ultimate-tier .wealth-backdrop{box-shadow:0 0 65px #b2f9ff88,0 0 0 35px #a8e5ff12}
+.ultimate-tier .piece-gem{filter:drop-shadow(0 0 9px #e6ffff)}
+@media(max-width:600px){
+  html,body{overflow-x:hidden}
+  .market-ticker{height:36px;padding:0 8px;gap:5px}
+  .ticker-text{display:none}
+  .ticker-label{font-size:8px;letter-spacing:.06em;padding-right:5px}
+  .fit-screen-toggle{display:inline-flex}
+  .account-controls a,.account-controls>button,.fit-screen-toggle{font-size:10px;padding:6px}
+  .play-column{padding:9px 11px 7px}
+  .play-header{gap:7px}
+  .brand-mark{width:31px;height:31px;font-size:21px}
+  .brand-kicker{font-size:7px}
+  .play-header h1{font-size:16px}
+  .balance-card{padding:7px 0 2px}
+  .balance{font-size:clamp(30px,8vw,42px)}
+  .income-line{margin-top:2px;font-size:11px}
+  .play-column .pile-zone{height:235px;min-height:235px}
+  .play-column .money-pile{width:min(68vw,245px)}
+  .play-footer{padding-top:5px;margin-top:3px}
+  .progress-area{height:230px}
+  .progress-area .tabs{padding:0 4px}
+  .progress-area .tab{padding:8px 1px;font-size:9px}
+  .progress-area .tab-panel{padding:9px 10px}
+  .world-panel{height:255px;min-height:255px;padding:9px}
+  .world-panel .owned-business-list{padding:5px 2px}
+  .store-top{padding:10px 12px}
+  .business-card{min-height:58px;padding:5px 7px}
+  .business-image,.business-image img{width:42px;height:42px}
+  .fit-screen .play-column .pile-zone{height:175px;min-height:175px}
+  .fit-screen .play-column .money-pile{width:min(52vw,180px)}
+  .fit-screen .progress-area{height:182px}
+  .fit-screen .world-panel{height:190px;min-height:190px}
+  .fit-screen .balance{font-size:30px}
+  .fit-screen .business-image,.fit-screen .business-image img{width:36px;height:36px}
+}
+@media(min-width:801px){
+  .progress-area .tabs,.store-top{height:72px;min-height:72px;padding-top:0;padding-bottom:0;border-bottom:1px solid var(--line)}
+  .progress-area .tabs{align-items:stretch}
+  .progress-area .tab{display:grid;place-items:center;padding-top:0;padding-bottom:0}
+  .store-top{align-items:center}
+}
+.username-form input{display:block;width:100%;min-height:42px;padding:9px 11px;border:1px solid #88a786;border-radius:7px;background:#f8f5e8;color:#173123;font:inherit}
+.username-feedback{min-height:21px;margin:9px 0 0;color:var(--gold);font-size:12px}
+.account-details p{line-height:1.5;color:var(--muted)}
+@media(max-width:600px){
+  .account-controls a,.account-controls>button,.fit-screen-toggle{min-height:32px}
+}

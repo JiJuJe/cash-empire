@@ -1,3 +1,4 @@
+import {readSession,handleAuthRequest} from "./auth.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -44,7 +45,7 @@ function loadProgress(row){
     userId:row.user_id,balance:capped(row.balance),lifetime:capped(row.lifetime_cash),
     runEarned:capped(row.run_earned),rebirths:row.rebirths,empirePoints:row.empire_points,
     empireSpent:row.empire_spent,totalClicks:row.total_clicks,lastClickMs:row.last_click_ms,
-    lastAccrualMs:row.last_accrual_ms,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
+    lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
     version:row.version
   };
@@ -76,7 +77,8 @@ function award(s,amount){
 function advance(s,now,entitled){
   const cap=s.prestige.includes("nightshift")?16*3600:10*3600;
   const elapsed=Math.min(cap,Math.max(0,(now-s.lastAccrualMs)/1000));
-  award(s,businessRate(s,entitled)*elapsed);
+  const efficiency=elapsed>60?.5:1;
+  award(s,businessRate(s,entitled)*elapsed*efficiency);
   s.lastAccrualMs=now;
 }
 function upgradeFor(s,id){
@@ -94,10 +96,16 @@ function upgradeFor(s,id){
 }
 function applyAction(current,action,now,entitled){
   const s=structuredClone(current);
+  const previousAccrual=s.lastAccrualMs;
   advance(s,now,entitled);
-  if(action.type==="click"){
-    if(now-s.lastClickMs<55)throw Error("Clicks are too fast.");
-    award(s,clickRate(s,entitled));s.totalClicks++;s.lastClickMs=now;
+  if(action.type==="click_batch"){
+    const count=action.count;
+    const maximum=Math.min(180,Math.floor(Math.max(0,now-previousAccrual)/55)+2);
+    if(!Number.isInteger(count)||count<1||count>maximum)throw Error("Invalid click batch.");
+    award(s,clickRate(s,entitled)*count);s.totalClicks+=count;s.lastClickMs=now;
+  }else if(action.type==="golden"){
+    if(now-s.lastGoldenMs<180000)throw Error("Golden Bill is not ready.");
+    award(s,Math.max(100,businessRate(s,entitled)*180,clickRate(s,entitled)*50));s.lastGoldenMs=now;
   }else if(action.type==="buy_business"){
     const b=BUSINESS.find(x=>x.id===action.businessId);
     const quantity=action.quantity;
@@ -151,7 +159,6 @@ async function rateLimit(env,request,route,max,windowMs=60000){
   const row=await env.DB.prepare("SELECT count FROM api_rate_limits WHERE key=?").bind(key).first();
   if(row.count>max)fail(429,"Too many requests. Try again shortly.");
 }
-function hex(bytes){return [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");}
 async function hmac(secret,message){
   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(message)));
@@ -165,24 +172,7 @@ function fromHex(value){
   if(!/^[a-f0-9]{64}$/i.test(value))return null;
   return Uint8Array.from(value.match(/../g),x=>parseInt(x,16));
 }
-function decodeBase64Url(value){
-  const base=value.replace(/-/g,"+").replace(/_/g,"/");
-  return atob(base+"=".repeat((4-base.length%4)%4));
-}
-async function sessionUser(request,env){
-  if(!env.SESSION_SECRET||!env.DB)return null;
-  const cookie=request.headers.get("Cookie")||"";
-  const token=cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith("ce_session="))?.slice(11);
-  if(!token)return null;
-  const parts=token.split(".");
-  if(parts.length!==2||parts[0].length>512)return null;
-  const signature=fromHex(parts[1]);
-  if(!signature||!constantEqual(signature,await hmac(env.SESSION_SECRET,parts[0])))return null;
-  let claims;
-  try{claims=JSON.parse(decodeBase64Url(parts[0]));}catch(_){return null;}
-  if(!claims||typeof claims.uid!=="string"||!/^[A-Za-z0-9_-]{8,80}$/.test(claims.uid)||!Number.isSafeInteger(claims.exp)||claims.exp<Date.now())return null;
-  return env.DB.prepare("SELECT id,username FROM users WHERE id=?").bind(claims.uid).first();
-}
+async function sessionUser(request,env){return readSession(request,env);}
 async function hasDoubleMoney(env,userId){
   if(!userId)return false;
   const row=await env.DB.prepare("SELECT 1 AS owned FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL").bind(userId).first();
@@ -194,11 +184,11 @@ async function ensureProgress(env,userId,now){
 }
 const scoreSql=`WITH scores AS (
   SELECT u.id,u.username,p.rebirths,
-    MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)) AS lifetime_cash
-  FROM progress p JOIN users u ON u.id=p.user_id
+    MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)*CASE WHEN ?-p.last_accrual_ms>60000 THEN 0.5 ELSE 1 END) AS lifetime_cash
+  FROM progress p JOIN users u ON u.id=p.user_id WHERE u.username_set=1
 ), ranked AS (
   SELECT id,username,rebirths,lifetime_cash,
-    ROW_NUMBER() OVER (ORDER BY lifetime_cash DESC,id ASC) AS rank
+    ROW_NUMBER() OVER (ORDER BY lifetime_cash DESC,rebirths DESC,id ASC) AS rank
   FROM scores
 )`;
 function leaderboardEntry(row,userId){
@@ -207,31 +197,31 @@ function leaderboardEntry(row,userId){
 async function getLeaderboard(request,env,user){
   await rateLimit(env,request,"leaderboard",30);
   const now=Date.now();
-  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=100 ORDER BY rank").bind(now).all();
+  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=100 ORDER BY rank").bind(now,now).all();
   const players=(top.results||[]).map(row=>leaderboardEntry(row,user?.id));
   let me=players.find(row=>row.isSelf)||null;
-  if(user&&!me){
-    const row=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE id=?").bind(now,user.id).first();
+  if(user?.username_set&&!me){
+    const row=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE id=?").bind(now,now,user.id).first();
     if(row)me=leaderboardEntry(row,user.id);
   }
   return json({players,me,authenticated:Boolean(user)});
 }
 function progressSummary(s,entitled){
-  return {balance:s.balance,lifetimeCash:s.lifetime,rebirths:s.rebirths,ratePerSecond:businessRate(s,entitled),empirePoints:s.empirePoints,totalClicks:s.totalClicks};
+  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,ratePerSecond:businessRate(s,entitled),empirePoints:s.empirePoints,empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs};
 }
 function updateStatement(env,s,oldVersion,entitled){
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
   return env.DB.prepare(`UPDATE progress SET balance=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
-    total_clicks=?,last_click_ms=?,last_accrual_ms=?,rate_per_second=?,offline_cap_seconds=?,
+    total_clicks=?,last_click_ms=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
     businesses_json=?,upgrades_json=?,prestige_json=?,version=version+1
     WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
-      s.totalClicks,s.lastClickMs,s.lastAccrualMs,rate,cap,
+      s.totalClicks,s.lastClickMs,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),s.userId,oldVersion
     );
 }
 async function getProgress(env,user){
-  if(!user)fail(401,"Sign in required.");
+  if(!user||!user.username_set)fail(401,"Choose a username first.");
   const entitled=await hasDoubleMoney(env,user.id);
   for(let attempt=0;attempt<3;attempt++){
     const row=await ensureProgress(env,user.id,Date.now());
@@ -243,12 +233,12 @@ async function getProgress(env,user){
   fail(409,"Progress changed. Retry.");
 }
 async function postProgress(request,env,user){
-  if(!user)fail(401,"Sign in required.");
+  if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  await rateLimit(env,request,"progress:"+user.id,1200);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId"]);
+  await rateLimit(env,request,"progress:"+user.id,60);
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count"]);
   if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
-  const allowed={click:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
+  const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
   if(!allowed[action.type]||Object.keys(action).some(key=>!allowed[action.type].includes(key)))fail(400,"Invalid action.");
   const entitled=await hasDoubleMoney(env,user.id);
   const now=Date.now(),row=await ensureProgress(env,user.id,now),current=loadProgress(row);
@@ -289,7 +279,7 @@ async function storeStatus(request,env,user){
 }
 async function beginCheckout(request,env,user){
   if(!paymentsConfigured(env))fail(503,"Payments are not available yet.");
-  if(!user)fail(401,"Sign in before buying 2x Money.");
+  if(!user||!user.username_set)fail(401,"Choose a username before buying 2x Money.");
   sameOrigin(request);
   await rateLimit(env,request,"checkout:"+user.id,5);
   await readBody(request,[]);
@@ -356,9 +346,9 @@ async function stripeWebhook(request,env){
       env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(event.id,now),
       env.DB.prepare("UPDATE purchases SET status='paid',paid_at_ms=? WHERE id=?").bind(now,purchase.id),
       env.DB.prepare(`UPDATE progress SET
-        balance=MIN(1e300,balance+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)),
-        lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)),
-        run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)),
+        balance=MIN(1e300,balance+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
+        lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
+        run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
         last_accrual_ms=?,rate_per_second=MIN(1e300,rate_per_second*2),version=version+1
         WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL)`)
         .bind(now,now,now,now,purchase.user_id,purchase.user_id),
@@ -373,12 +363,6 @@ async function stripeWebhook(request,env){
   }
   return json({received:true});
 }
-export async function createSessionToken(userId,secret,expiresAtMs){
-  if(typeof userId!=="string"||!/^[A-Za-z0-9_-]{8,80}$/.test(userId)||!Number.isSafeInteger(expiresAtMs))
-    throw Error("Invalid session claims.");
-  const payload=btoa(JSON.stringify({uid:userId,exp:expiresAtMs})).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-  return payload+"."+hex(await hmac(secret,payload));
-}
 export {sanitizeUsername};
 export default {
   async fetch(request,env){
@@ -390,6 +374,8 @@ export default {
       if(url.pathname==="/api/store/status"&&request.method==="GET")
         return await storeStatus(request,env,await sessionUser(request,env));
       requireDatabase(env);
+      const authResponse=await handleAuthRequest(request,env);
+      if(authResponse)return authResponse;
       if(url.pathname==="/api/store/webhook"&&request.method==="POST")return await stripeWebhook(request,env);
       const user=await sessionUser(request,env);
       if(url.pathname==="/api/leaderboard"&&request.method==="GET")return await getLeaderboard(request,env,user);
@@ -397,7 +383,7 @@ export default {
         fail(400,"Client-supplied cash, lifetime cash and rebirth totals are not accepted. Send server-validated actions.");
       if(url.pathname==="/api/progress/action"&&request.method==="POST")return await postProgress(request,env,user);
       if(url.pathname==="/api/progress/snapshot"&&request.method==="GET")return await getProgress(env,user);
-      if(url.pathname==="/api/profile/username"&&request.method==="POST")return await updateUsername(request,env,user);
+      if(url.pathname==="/api/profile/username"&&request.method==="POST")fail(410,"Use account username setup.");
       if(url.pathname==="/api/store/checkout"&&request.method==="POST")return await beginCheckout(request,env,user);
       return json({error:"Not found."},404);
     }catch(error){

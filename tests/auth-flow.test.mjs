@@ -1,0 +1,132 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {DatabaseSync} from "node:sqlite";
+import worker from "../worker/index.mjs";
+
+const origin="https://clickthecash.online";
+const encode=value=>Buffer.from(typeof value==="string"?value:JSON.stringify(value)).toString("base64url");
+function d1(database){
+  return {
+    prepare(sql){
+      let args=[];
+      return {
+        sql,get args(){return args},
+        bind(...values){args=values;return this;},
+        async run(){const result=database.prepare(sql).run(...args);return {meta:{changes:result.changes}};},
+        async first(){return database.prepare(sql).get(...args)||null;},
+        async all(){return {results:database.prepare(sql).all(...args)};}
+      };
+    },
+    async batch(statements){
+      database.exec("BEGIN");
+      try{
+        const results=statements.map(item=>({meta:{changes:database.prepare(item.sql).run(...item.args).changes}}));
+        database.exec("COMMIT");return results;
+      }catch(error){database.exec("ROLLBACK");throw error;}
+    }
+  };
+}
+
+test("Google callback creates a stable account, username is unique, and sign out revokes session",async()=>{
+  const database=new DatabaseSync(":memory:");
+  database.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
+  database.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const jwk={...await crypto.subtle.exportKey("jwk",keys.publicKey),kid:"test-key",use:"sig"};
+  const env={DB:d1(database),SESSION_SECRET:"a-secret-long-enough-for-tests",GOOGLE_CLIENT_ID:"client-test",GOOGLE_CLIENT_SECRET:"secret-test",PUBLIC_SITE_URL:origin};
+  let nonce,subject="google-subject-one";
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async input=>{
+    const url=String(input);
+    if(url==="https://oauth2.googleapis.com/token"){
+      const header=encode({alg:"RS256",typ:"JWT",kid:"test-key"});
+      const claims=encode({iss:"https://accounts.google.com",aud:env.GOOGLE_CLIENT_ID,nonce,sub:subject,iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600});
+      const payload=header+"."+claims;
+      const signature=Buffer.from(await crypto.subtle.sign("RSASSA-PKCS1-v1_5",keys.privateKey,new TextEncoder().encode(payload))).toString("base64url");
+      return Response.json({id_token:payload+"."+signature});
+    }
+    if(url==="https://www.googleapis.com/oauth2/v3/certs")return Response.json({keys:[jwk]});
+    return originalFetch(input);
+  };
+  async function login(){
+    const started=await worker.fetch(new Request(origin+"/api/auth/google/start"),env);
+    assert.equal(started.status,302);
+    const authorization=new URL(started.headers.get("Location"));
+    nonce=authorization.searchParams.get("nonce");
+    const flow=started.headers.get("Set-Cookie").split(";")[0];
+    const callback=new URL(origin+"/api/auth/google/callback");
+    callback.searchParams.set("state",authorization.searchParams.get("state"));
+    callback.searchParams.set("code","test-code");
+    const completed=await worker.fetch(new Request(callback,{headers:{Cookie:flow}}),env);
+    assert.equal(completed.status,302);
+    return completed.headers.getSetCookie().find(x=>x.startsWith("__Host-ce_session=")).split(";")[0];
+  }
+  try{
+    const cookie=await login();
+    const initial=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:cookie}}),env);
+    assert.deepEqual(await initial.json(),{authenticated:true,username:null,needsUsername:true});
+    const check=await worker.fetch(new Request(origin+"/api/username/check",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"CashKing92"})}),env);
+    assert.equal((await check.json()).available,true);
+    const chosen=await worker.fetch(new Request(origin+"/api/username",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"CashKing92"})}),env);
+    assert.equal((await chosen.json()).username,"CashKing92");
+    const userId=database.prepare("SELECT id FROM users WHERE google_subject=?").get(subject).id;
+    const snapshot=await worker.fetch(new Request(origin+"/api/progress/snapshot",{headers:{Cookie:cookie}}),env);
+    assert.equal((await snapshot.json()).balance,0);
+    const action=(body)=>worker.fetch(new Request(origin+"/api/progress/action",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({actionId:crypto.randomUUID(),...body})}),env);
+    const firstClick=await action({type:"click_batch",count:1});
+    assert.equal((await firstClick.json()).balance,1);
+    database.prepare("UPDATE progress SET last_accrual_ms=? WHERE user_id=?").run(Date.now()-1000,userId);
+    const moreClicks=await action({type:"click_batch",count:10});
+    assert.ok((await moreClicks.json()).balance>=11);
+    const purchased=await action({type:"buy_business",businessId:"collector",quantity:1});
+    assert.equal((await purchased.json()).businesses.collector,1);
+    const signedOut=await worker.fetch(new Request(origin+"/api/auth/signout",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:"{}"}),env);
+    assert.equal(signedOut.status,200);
+    const afterSignout=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:cookie}}),env);
+    assert.equal((await afterSignout.json()).authenticated,false);
+    const again=await login();
+    const returning=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:again}}),env);
+    assert.deepEqual(await returning.json(),{authenticated:true,username:"CashKing92",needsUsername:false});
+    assert.equal(database.prepare("SELECT id FROM users WHERE google_subject=?").get(subject).id,userId);
+    subject="google-subject-two";
+    const secondCookie=await login();
+    const duplicate=await worker.fetch(new Request(origin+"/api/username/check",{method:"POST",headers:{Cookie:secondCookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"cashking92"})}),env);
+    assert.deepEqual(await duplicate.json(),{available:false,message:"Username already taken"});
+    const leaderboard=await worker.fetch(new Request(origin+"/api/leaderboard",{headers:{Cookie:secondCookie}}),env);
+    const data=await leaderboard.json();
+    assert.equal(data.players.length,1);
+    assert.equal(data.players[0].username,"CashKing92");
+    assert.equal(data.me,null);
+  }finally{globalThis.fetch=originalFetch;database.close();}
+});
+
+test("leaderboard is public, ordered, limited to 100, and returns an outside player's rank",async()=>{
+  const db=new DatabaseSync(":memory:");
+  db.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  const now=Date.now();
+  const user=db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES(?,?,?,?,1)");
+  const score=db.prepare("INSERT INTO progress(user_id,last_accrual_ms,lifetime_cash,rebirths) VALUES(?,?,?,?)");
+  for(let i=1;i<=101;i++){
+    const id="player"+String(i).padStart(3,"0");
+    user.run(id,"Player_"+i,now,("Player_"+i).toLowerCase());
+    score.run(id,now,i===1||i===2?500:500-i,i===2?5:0);
+  }
+  const token="A".repeat(43);
+  const hash=Buffer.from(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token))).toString("hex");
+  db.prepare("INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)")
+    .run(hash,"player101",now,now+60000);
+  const env={DB:d1(db)};
+  const publicResult=await worker.fetch(new Request(origin+"/api/leaderboard"),env);
+  const publicData=await publicResult.json();
+  assert.equal(publicData.players.length,100);
+  assert.equal(publicData.players[0].username,"Player_2");
+  assert.equal(publicData.players[1].username,"Player_1");
+  assert.equal(publicData.authenticated,false);
+  const ownResult=await worker.fetch(new Request(origin+"/api/leaderboard",{headers:{Cookie:"__Host-ce_session="+token}}),env);
+  const ownData=await ownResult.json();
+  assert.equal(ownData.me.rank,101);
+  assert.equal(ownData.me.isSelf,true);
+  db.close();
+});

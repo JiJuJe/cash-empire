@@ -1,39 +1,53 @@
-# Cloudflare leaderboard and premium store setup
+# Cloudflare Worker setup for Click The Cash
 
-The repository previously contained only static game files and a GitHub Pages workflow. This change adds a Worker module and D1 migration, but it does not create Cloudflare resources or payment credentials.
+The static game runs without an account. Google sign in, server-verified leaderboard progress, and premium ownership require this repository's Worker plus D1. The production site is `https://clickthecash.online`. The OAuth code uses the same-origin callback `https://clickthecash.online/api/auth/google/callback`.
 
-## Deploy the Worker on the existing Cloudflare project
+## 1. Google Cloud Console
 
-1. Create a D1 database named `cash-empire` in Cloudflare. Note its UUID.
-2. Copy `wrangler.example.jsonc` to `wrangler.jsonc`. Keep your existing Worker name if it differs, insert the real D1 UUID, and keep the `DB` and `ASSETS` binding names.
-3. Apply `migrations/0001_leaderboard_store.sql` with `wrangler d1 migrations apply cash-empire --remote`.
-4. Configure your Cloudflare Git deployment to deploy from the repository root with the Wrangler configuration, or run `wrangler deploy`. The Worker serves static assets from `./CashEmpire` and handles `/api/*`.
-5. Set `SESSION_SECRET` as a Worker secret before connecting an account provider. Use a long random value. Do not put it in the repository.
+1. Create or select a Google Cloud project and configure the OAuth consent screen.
+2. Create an OAuth 2.0 **Web application** client.
+3. Add **Authorized JavaScript origin**: `https://clickthecash.online`.
+4. Add **Authorized redirect URI**: `https://clickthecash.online/api/auth/google/callback`.
+5. Copy the client ID and client secret. No values are stored in the repository.
+6. For a separate local Worker, use a separate OAuth client and set its exact local origin/callback, such as `http://localhost:8787` and `http://localhost:8787/api/auth/google/callback`. Set that Worker's `PUBLIC_SITE_URL` to the same local origin.
 
-The existing GitHub Pages site continues to work as a guest game. Pages cannot access same-origin Worker APIs; the leaderboard and premium entitlement require opening the Cloudflare-hosted game.
+The Worker uses authorization code flow, PKCE, state, nonce, and a server-verified Google ID token. It only stores the stable Google subject, not the player's Google email or name.
 
-## Account integration
+## 2. D1 and Worker deployment
 
-No login or account creation endpoint is included yet. The future trusted authentication flow must create a `users` row and issue an HttpOnly, Secure, SameSite=Lax `ce_session` cookie. The Worker verifies an HMAC-SHA256 signature over a base64url JSON payload `{"uid":"user-id","exp":milliseconds-since-epoch}`. `createSessionToken` is exported from `worker/index.js` for the trusted issuer. Never issue sessions in browser code.
+1. Create a D1 database, for example `cash-empire`, and note its UUID.
+2. Copy `wrangler.example.jsonc` to `wrangler.jsonc`. Set the **existing Worker name**, real D1 UUID, and keep `main: worker/index.mjs`, `DB`, `ASSETS`, `assets.directory: ./CashEmpire`, and `run_worker_first: ["/api/*"]`. The Worker must serve both static files and API on `clickthecash.online`.
+3. Apply both migrations in order with `wrangler d1 migrations apply cash-empire --remote`. If the original migration is already applied, Wrangler applies only `0002_google_accounts.sql`.
+4. Set a nonsecret Worker variable `PUBLIC_SITE_URL=https://clickthecash.online`.
+5. Configure the existing Cloudflare Git deployment to deploy the Worker from the repository root using the Wrangler config. The current repository also retains a GitHub Pages workflow for guest play. A static-only Cloudflare build does **not** publish `/api/*`.
+6. Verify `https://clickthecash.online/api/health` returns JSON after deployment. A 404 means the static site is live but the Worker API has not been deployed or routed.
 
-The `progress` row is created by the Worker on first authenticated request. Legacy localStorage saves cannot be accepted as verified leaderboard results. The future signed-in game should send individual actions to `POST /api/progress/action` with a unique `actionId`, and read `GET /api/progress/snapshot`. The Worker calculates income and costs from its own configuration and rejects client-supplied totals. Its action API covers clicks, business purchases, regular upgrades, prestige investments and rebirth; Golden Bill rewards remain local until a server-issued event protocol is added. Accounts must use server progress for ranked play.
+Keep real Cloudflare resource IDs in your existing deployment configuration. Do not use the placeholder UUID in `wrangler.example.jsonc`.
 
-Usernames are validated to 3–24 letters, digits, spaces, underscores or hyphens. Signed-in users can update a name at `POST /api/profile/username`.
+## 3. Worker secrets
 
-## Optional €2 payment activation
+Set these as Cloudflare Worker secrets, never frontend code or GitHub files:
 
-The Store visibly shows 2x Money but reports “Payments are not available yet” until all of these are configured:
+- `GOOGLE_CLIENT_ID` — Web application client ID.
+- `GOOGLE_CLIENT_SECRET` — matching Web application client secret.
+- `SESSION_SECRET` — long random value (at least 32 random bytes). It signs the short OAuth flow cookie.
 
-- A Stripe account, with a secret API key stored as Worker secret `STRIPE_SECRET_KEY`.
-- A Stripe webhook endpoint at `https://YOUR-CLOUDFLARE-DOMAIN/api/store/webhook` subscribed to `checkout.session.completed` and `checkout.session.async_payment_succeeded`; store its signing secret as `STRIPE_WEBHOOK_SECRET`.
-- `PUBLIC_SITE_URL` set to the HTTPS URL of the Cloudflare-hosted game.
+Sessions use random opaque cookies; D1 stores only a SHA-256 token hash. Cookies are HttpOnly, SameSite=Lax and Secure on HTTPS. Sign out deletes the session row.
 
-Checkout creates a server-priced €2.00 Stripe Session. Only a verified paid webhook tied to a recorded Session grants `double_money` in D1. Return redirects never grant an entitlement. The Worker never handles card data.
+## 4. Existing saves and verified leaderboard runs
 
-## Security model
+The old `cash-empire-save-v1` browser save stays readable. First login asks the player to choose a username, then choose between their existing local game and a new verified cloud run. Local saves are not imported into global rankings because browser data can be edited. Starting the verified run backs up the local state under `cash-empire-local-backup-v1`; Account has a Restore browser save action. A new device with no local progress loads the same account's server run.
 
-- The browser cannot submit cash, lifetime cash or rebirth totals. The action endpoint calculates outcomes and uses optimistic version checks plus action IDs to reject conflicting/replayed updates.
-- The public leaderboard reads only server progress in D1, ordered by effective lifetime cash.
-- Entitlement is read from D1 for a verified session. It is not saved in localStorage. The local game activates 2x only after a successful same-origin Worker response.
-- Without login, the leaderboard contains no example players. Without Stripe configuration, no purchase is simulated.
-- The existing local guest game remains playable and keeps its save format. Browser JavaScript can always be modified locally, so only server progress is suitable for competitive rankings.
+Verified runs batch clicks about every 10 seconds. The Worker computes click income, purchase prices, passive production, Golden Bill reward, prestige and rebirths. It refuses client-submitted money totals. Offline passive income uses 50% efficiency. The public leaderboard includes only accounts with chosen usernames and ranks by lifetime money, rebirths, then internal ID.
+
+## 5. Optional payment activation
+
+The Store remains visible but says **Payments coming soon** until the existing Stripe integration is configured. It never grants a purchase from a redirect or localStorage.
+
+For later activation, set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets and create a Stripe webhook at `https://clickthecash.online/api/store/webhook` for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. `PUBLIC_SITE_URL` must be set. A verified paid webhook writes the `double_money` entitlement to D1. The Worker does not handle card details.
+
+## Notes
+
+- Do not enter or commit live OAuth, Stripe or Cloudflare secrets in this repository.
+- OAuth cannot complete until the real Google credentials, D1 binding, migrations and Worker route are configured.
+- The GitHub Pages version remains a guest game; its same-origin API routes do not point to Cloudflare.

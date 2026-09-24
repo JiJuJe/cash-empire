@@ -1,28 +1,9 @@
 # Cash Empire
 
-A complete, original, lightweight incremental game built with HTML, CSS, and vanilla JavaScript.
+A lightweight original clicker game built with HTML, CSS, and vanilla JavaScript.
 
-## Play locally
+Open `CashEmpire/index.html` locally for guest play. Browser progress continues to use the compatible `cash-empire-save-v1` localStorage format. The main money pile earns cash directly; businesses automate production. Upgrades, achievements, Golden Bills, rebirth and offline earnings are included.
 
-Open [CashEmpire/index.html](CashEmpire/index.html) in a browser. No build step, server, package manager, or network connection is needed.
+The production Cloudflare Worker serves `CashEmpire/` and `/api/*` on `https://clickthecash.online` when configured. Google account login uses D1-backed sessions, unique public usernames, a server-validated Top 100 leaderboard and an account-based cloud run. Existing browser saves remain separate and can be backed up before a verified run begins. The Store's 2x Money entitlement is only read from the server.
 
-## GitHub Pages
-
-The repository includes a Pages workflow that publishes the contents of `CashEmpire/` when `main` changes. In repository **Settings → Pages**, select **GitHub Actions** as the build source. The root `index.html` also redirects to the game when using branch based Pages hosting.
-
-## Gameplay
-
-Click the cash pile to earn money. Buy businesses for automatic income, collect Golden Bills, unlock upgrades and achievements, then rebirth for permanent Empire Points. Progress saves in this browser every 10 seconds and after purchases. Export a save code to move progress to another browser.
-
-## Files
-
-- `CashEmpire/index.html` — interface
-- `CashEmpire/style.css` — artwork, layout, and animation
-- `CashEmpire/script.js` — game configuration and systems
-- `CashEmpire/assets/` — local business artwork
-
-All prices and production values are in configuration arrays near the top of `script.js`.
-
-## Leaderboard and premium Store
-
-The game includes Leaderboard and Store navigation. A Cloudflare Worker and D1 migration for verified account progress and the optional €2.00 2x Money checkout are in `worker/` and `migrations/`. No example players or fake purchase completion is shown. See [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md) for the required Cloudflare and optional Stripe setup. Guest saves stay local and keep working on GitHub Pages.
+See `CLOUDFLARE_SETUP.md` for the exact Google OAuth redirect, D1 migrations, Worker bindings and secrets. The GitHub Pages workflow remains for guest play.

@@ -25,7 +25,7 @@
     {id:"wallet",name:"Better Wallet",icon:"👛",cost:50,mult:2,unlock:25,description:"Click income ×2"},
     {id:"fingers",name:"Fast Fingers",icon:"⚡",cost:500,mult:2,unlock:250,description:"Click income ×2"},
     {id:"goldWallet",name:"Golden Wallet",icon:"💛",cost:10000,mult:3,unlock:5000,description:"Click income ×3"},
-    {id:"diamond",name:"Diamond Hands",icon:"💎",cost:1000000,mult:5,unlock:500000,description:"Click income ×5"},
+    {id:"diamond",name:"Diamond Hands",image:"assets/upgrade-diamond-hands.png",cost:1000000,mult:5,unlock:500000,description:"Click income ×5"},
     {id:"magnet",name:"Money Magnet",icon:"🧲",cost:100000000,mult:10,unlock:50000000,description:"Click income ×10"},
     {id:"quantum",name:"Quantum Purse",icon:"⚛",cost:10000000000,mult:10,unlock:5000000000,description:"Click income ×10"},
     {id:"cosmic",name:"Cosmic Grip",icon:"✦",cost:1000000000000,mult:20,unlock:500000000000,description:"Click income ×20"},
@@ -34,7 +34,7 @@
   const SPECIAL_UPGRADES = [
     {id:"marketSense",name:"Market Sense",icon:"◈",cost:300,unlock:100,description:"All businesses produce +1%.",effect:"total",mult:1.01},
     {id:"tapTraining",name:"Tap Training",icon:"✦",cost:2500,unlock:1000,description:"Click value +25%.",effect:"click",mult:1.25},
-    {id:"vendingDining",name:"Lunch Rush",icon:"↗",cost:250000,requires:{vending:5,restaurant:1},description:"Vending Machines boost Restaurants ×1.5.",effect:"restaurant",mult:1.5},
+    {id:"vendingDining",name:"Lunch Rush",image:"assets/upgrade-lunch-rush.png",cost:250000,requires:{vending:5,restaurant:1},description:"Vending Machines boost Restaurants ×1.5.",effect:"restaurant",mult:1.5},
     {id:"restaurantSupply",name:"Supply Chain",icon:"◉",cost:3000000,requires:{restaurant:10,supermarket:1},description:"Restaurants boost Supermarkets ×1.5.",effect:"supermarket",mult:1.5},
     {id:"cashflow",name:"Cashflow Forecast",icon:"▣",cost:50000000,unlock:20000000,description:"All businesses produce +5%.",effect:"total",mult:1.05},
     {id:"bankingNetwork",name:"Banking Network",icon:"⌁",cost:10000000000,requires:{bank:5,corporation:1},description:"Banks boost Corporations ×2.",effect:"corporation",mult:2},
@@ -45,11 +45,11 @@
   ];
   const PRESTIGE = [
     {id:"investor",name:"Investor",icon:"📊",cost:5,description:"Businesses produce +10%."},
-    {id:"compound",name:"Compound Interest",icon:"🪙",cost:12,description:"Each Empire Point gives +1.5% instead of +1%."},
-    {id:"automation",name:"Automation",icon:"🤖",cost:20,description:"Start each rebirth with 10 Cash Collectors and 5 Lemonade Stands."},
-    {id:"lucky",name:"Lucky Investor",icon:"🍀",cost:25,description:"Golden Bills appear 30% more often."},
-    {id:"executive",name:"Executive",icon:"💼",cost:35,description:"Permanent click income ×2."},
-    {id:"nightshift",name:"Night Shift",icon:"🌙",cost:50,description:"Offline earning cap rises from 10 to 16 hours."}
+    {id:"compound",name:"Compound Interest",image:"assets/upgrade-compound-interest.png",cost:12,description:"Each Empire Point gives +1.5% instead of +1%."},
+    {id:"automation",name:"Automation",image:"assets/upgrade-automation.png",cost:20,description:"Start each rebirth with 10 Cash Collectors and 5 Lemonade Stands."},
+    {id:"lucky",name:"Lucky Investor",image:"assets/upgrade-lucky-investor.png",cost:25,description:"Golden Bills appear 30% more often."},
+    {id:"executive",name:"Executive",image:"assets/upgrade-executive.png",cost:35,description:"Permanent click income ×2."},
+    {id:"nightshift",name:"Night Shift",image:"assets/upgrade-night-shift.png",cost:50,description:"Offline earning cap rises from 10 to 16 hours."}
   ];
   const SUFFIXES = ["","thousand","million","billion","trillion","quadrillion","quintillion","sextillion","septillion","octillion","nonillion","decillion","undecillion","duodecillion","tredecillion","quattuordecillion","quindecillion","sexdecillion","septendecillion","octodecillion","novemdecillion","vigintillion"];
   const $ = id => document.getElementById(id);
@@ -62,11 +62,14 @@
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
-    settings:{sound:true,animations:true,particles:true,compact:false,light:false}
+    settings:{sound:true,animations:true,particles:true,compact:false,light:false,fitScreen:false}
   });
   let state = defaultState();
   let premiumMultiplier = 1;
   let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false};
+  let account={authenticated:false,username:null,needsUsername:false};
+  let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),lastCloudSync=Date.now(),pendingAccountRefresh=false;
+  const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
   let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
   let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
@@ -112,10 +115,10 @@
   }
   function selectedQuantity(b) {
     const max = maxAffordable(b,state.businesses[b.id],state.money);
-    return buyAmount === "max" ? max : (Number(buyAmount) <= max ? Number(buyAmount) : 0);
+    return buyAmount === "max" ? (cloudMode?Math.min(max,100):max) : (Number(buyAmount) <= max ? Number(buyAmount) : 0);
   }
   function displayedQuantity(b) {
-    return buyAmount === "max" ? maxAffordable(b,state.businesses[b.id],state.money) : Number(buyAmount);
+    return buyAmount === "max" ? (cloudMode?Math.min(100,maxAffordable(b,state.businesses[b.id],state.money)):maxAffordable(b,state.businesses[b.id],state.money)) : Number(buyAmount);
   }
   function prestigeBonus() {
     return 1 + state.empireTotal * (hasPrestige("compound") ? .015 : .01);
@@ -247,11 +250,14 @@
       pileEl.append(scene);
     }
   }
+  function getWealthVisualTier(rate) {return rate>=100000?4:rate>=10000?3:rate>=1000?2:rate>=100?1:0;}
   function updatePile() {
-    const n=state.lifetime;
-    const thresholds=[0,100,1000,10000,1000000,1000000000,1000000000000,1000000000000000];
-    let stage=0;
-    for(let i=1;i<thresholds.length;i++)if(n>=thresholds[i])stage=i;
+    const tier=getWealthVisualTier(currentRate());
+    const stage=tier===0?Math.min(3,state.lifetime<10?0:state.lifetime<100?1:state.lifetime<1000?2:3):tier===1?5:tier===2?6:7;
+    document.documentElement.dataset.wealthTier=String(tier);
+    document.documentElement.classList.toggle("diamond-theme",tier>=2);
+    document.documentElement.classList.toggle("luxury-tier",tier>=3);
+    document.documentElement.classList.toggle("ultimate-tier",tier>=4);
     pileEl.className="money-pile wealth-"+stage+(pileEl.classList.contains("popped")?" popped":"");
   }
   function renderTop() {
@@ -303,7 +309,7 @@
       const amount=document.createElement("span");amount.className="owned-quantity";amount.textContent="×"+owned.toLocaleString("en-US");
       head.append(image,title,amount);
       const copies=document.createElement("div");copies.className="owned-copies";
-      const visible=Math.min(24,owned),base=Math.floor(owned/visible),extra=owned%visible;
+      const visible=Math.min(16,owned),base=Math.floor(owned/visible),extra=owned%visible;
       for(let i=0;i<visible;i++){
         const copy=document.createElement("span");copy.className="owned-copy";
         copy.style.setProperty("--delay",((i%7)*-.28)+"s");
@@ -363,6 +369,7 @@
     }
   }
   function buyUpgrade(u) {
+    if(cloudMode){queueCloudAction({type:"buy_upgrade",upgradeId:u.id});return;}
     if(has(u.id)||state.money<u.cost)return;
     state.money-=u.cost;state.upgrades.push(u.id);playTone(880);toast(u.name+" purchased");
     afterAction();
@@ -440,6 +447,7 @@
   }
   function buyBusiness(b) {
     const quantity=selectedQuantity(b);if(quantity<=0)return;
+    if(cloudMode){queueCloudAction({type:"buy_business",businessId:b.id,quantity});return;}
     const cost=totalCost(b,state.businesses[b.id],quantity);
     if(cost>state.money*(1+1e-12))return;
     state.money=Math.max(0,state.money-cost);state.businesses[b.id]+=quantity;
@@ -462,7 +470,7 @@
       cell.append(span,strong);grid.append(cell);
     }
     const settings=$("settingsList");settings.replaceChildren();
-    for(const [key,label] of [["sound","Sound"],["animations","Animations"],["particles","Particles"],["compact","Compact numbers"],["light","Light UI"]]) {
+    for(const [key,label] of [["sound","Sound"],["animations","Animations"],["particles","Particles"],["compact","Compact numbers"],["light","Light UI"],["fitScreen","Fit screen"]]) {
       const button=document.createElement("button");button.type="button";button.className="setting";
       const name=document.createElement("span");name.textContent=label;
       const status=document.createElement("strong");status.textContent=state.settings[key]?"ON":"OFF";
@@ -497,7 +505,7 @@
     const tree=$("prestigeTree");tree.replaceChildren();
     for(const p of PRESTIGE) {
       const owned=hasPrestige(p.id),card=document.createElement("div");card.className="investment-card";
-      const icon=document.createElement("div");icon.className="upgrade-icon";icon.textContent=p.icon;
+      const icon=document.createElement("div");icon.className="upgrade-icon";if(p.image){const art=document.createElement("img");art.src=p.image;art.alt="";icon.append(art);}else icon.textContent=p.icon;
       const info=document.createElement("div");info.className="upgrade-info";
       const name=document.createElement("strong");name.textContent=p.name;
       const desc=document.createElement("p");desc.textContent=p.description;
@@ -507,6 +515,7 @@
     }
   }
   function buyPrestige(p) {
+    if(cloudMode){queueCloudAction({type:"buy_prestige",upgradeId:p.id});return;}
     if(hasPrestige(p.id)||pointsAvailable()<p.cost)return;
     state.empireSpent+=p.cost;state.prestigeUpgrades.push(p.id);toast(p.name+" invested");playTone(940);afterAction();
   }
@@ -534,7 +543,7 @@
     for(const a of actions) buttons.append(makeButton(a.label,false,()=>{if(a.close!==false)closeModal();a.action?.();}));
     $("modalBackdrop").hidden=false;
   }
-  function closeModal() {$("modalBackdrop").hidden=true;}
+  function closeModal() {$("modalBackdrop").hidden=true;if(pendingAccountRefresh){pendingAccountRefresh=false;refreshAccount();}}
   function featureElement(tag,className,textValue) {
     const node=document.createElement(tag);
     if(className)node.className=className;
@@ -608,7 +617,7 @@
       status.remove();
       const players=Array.isArray(data.players)?data.players.slice(0,100):[];
       if(!players.length){
-        body.append(featureElement("div","feature-message","Sign in to appear on the leaderboard."));
+        body.append(featureElement("div","feature-message","No players yet. Be the first!"));
       } else {
         const list=featureElement("div","leaderboard-list");
         const heading=featureElement("div","leaderboard-row leaderboard-head");
@@ -624,7 +633,8 @@
         const own=leaderboardRow({...data.me,isSelf:true},true);
         body.append(own);
       }
-      if(!data.authenticated)body.append(featureElement("p","premium-note","Sign in to appear on the leaderboard."));
+      if(!data.authenticated)body.append(featureElement("p","premium-note","Sign in with Google to join the leaderboard."));
+    else if(account.needsUsername)body.append(featureElement("p","premium-note","Choose a username to join the leaderboard."));
     } catch (_) {
       if(featureMode!=="leaderboard")return;
       status.className="feature-message error";
@@ -634,14 +644,12 @@
   }
   async function beginPremiumCheckout(button,note) {
     if(premiumStatus.owned)return;
-    if(!premiumStatus.paymentsAvailable){
-      note.textContent="Payments are not available yet.";
-      return;
-    }
     if(!premiumStatus.authenticated){
-      note.textContent="Sign in before buying 2x Money.";
+      note.textContent="Sign in with Google to purchase.";
+      window.location.assign("/api/auth/google/start");
       return;
     }
+    if(!premiumStatus.paymentsAvailable){note.textContent="Payments coming soon";return;}
     button.disabled=true;
     note.textContent="Opening secure checkout...";
     try {
@@ -660,12 +668,145 @@
     const icon=featureElement("div","premium-icon","2×");
     const info=featureElement("div","premium-info");
     info.append(featureElement("strong","","2x Money"),featureElement("p","","Permanent 2x money earned."),featureElement("div","premium-price","€2.00"));
-    const buy=makeButton(premiumStatus.owned?"Owned ✓":"Buy",premiumStatus.owned,()=>beginPremiumCheckout(buy,note));
+    const buy=makeButton(premiumStatus.owned?"Owned ✓":!premiumStatus.authenticated?"Sign in to purchase":account.needsUsername?"Choose username":!premiumStatus.paymentsAvailable?"Payments coming soon":"Buy",premiumStatus.owned||premiumStatus.authenticated&&!account.needsUsername&&!premiumStatus.paymentsAvailable,()=>account.needsUsername?showUsernamePrompt():beginPremiumCheckout(buy,note));
     buy.className="premium-buy";
-    const note=featureElement("p","premium-note",premiumStatus.owned?"Your account owns this permanent upgrade.":premiumStatus.paymentsAvailable?(premiumStatus.authenticated?"Secure checkout opens after you press Buy.":"Sign in to buy 2x Money."):"Payments are not available yet.");
+    const note=featureElement("p","premium-note",premiumStatus.owned?"Your account owns this permanent upgrade.":!premiumStatus.authenticated?"Sign in with Google to purchase.":premiumStatus.paymentsAvailable?"Secure checkout opens after you press Buy.":"Payments coming soon");
     card.append(icon,info,buy);body.append(card,note);
     if(premiumStatus.owned)body.append(featureElement("div","premium-state","2x Money is active for this signed-in account."));
   }
+
+  function renderAccountControls(){
+    $("googleSignIn").hidden=account.authenticated;
+    $("accountButton").hidden=!account.authenticated;
+    $("accountButton").textContent=(account.username||"Choose username")+" ▼";
+    $("accountUsername").textContent=account.username||"Choose username";
+  }
+  async function refreshAccount(){
+    try{
+      const data=await apiJson("/api/account");
+      account={authenticated:data.authenticated===true,username:typeof data.username==="string"?data.username:null,needsUsername:data.needsUsername===true};
+    }catch(_){account={authenticated:false,username:null,needsUsername:false};}
+    renderAccountControls();
+    if(account.needsUsername)showUsernamePrompt();
+    else if(account.authenticated){
+      const choice=localStorage.getItem(CLOUD_CHOICE);
+      if(choice==="cloud"||(!choice&&state.lifetime===0&&state.money===0))await activateCloud(false);
+      else if(!choice)offerCloudChoice();
+    }
+  }
+  function showUsernamePrompt(){
+    const wrap=featureElement("div","username-form");
+    const intro=featureElement("p","","Choose a public name for the leaderboard. Your Google account details stay private.");
+    const input=document.createElement("input");input.type="text";input.maxLength=40;input.autocomplete="off";input.spellcheck=false;input.placeholder="CashKing92";input.setAttribute("aria-label","Username");
+    const feedback=featureElement("p","username-feedback","3–20 letters, numbers or underscores.");
+    wrap.append(intro,input,feedback);
+    let timer=0,valid=false;
+    input.addEventListener("input",()=>{
+      valid=false;clearTimeout(timer);
+      const value=input.value.normalize("NFKC");
+      if(value.length<3){feedback.textContent="Username too short";return;}
+      if(value.length>20){feedback.textContent="Username too long";return;}
+      if(!/^[A-Za-z0-9_]+$/.test(value)){feedback.textContent="Invalid characters";return;}
+      feedback.textContent="Checking...";
+      timer=setTimeout(async()=>{
+        try{
+          const data=await apiJson("/api/username/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:value})});
+          if(input.value!==value)return;
+          valid=data.available===true;feedback.textContent=data.message||"That username is not allowed";
+        }catch(_){feedback.textContent="Username check unavailable. Try again.";}
+      },350);
+    });
+    modal("Choose your username",wrap,[{label:"Save username",close:false,action:async()=>{
+      if(!valid){feedback.textContent="Choose an available username first.";return;}
+      try{
+        const data=await apiJson("/api/username",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:input.value})});
+        account.username=data.username;account.needsUsername=false;renderAccountControls();closeModal();refreshPremiumStatus();
+        const choice=localStorage.getItem(CLOUD_CHOICE);
+        if(choice==="cloud"||(!choice&&state.lifetime===0&&state.money===0))await activateCloud(false);
+        else if(!choice)offerCloudChoice();
+      }catch(error){valid=false;feedback.textContent=error.message||"That username is not allowed";}
+    }}]);
+    input.focus();
+  }
+  function offerCloudChoice(){
+    modal("Your saved game","Your browser save is safe. The leaderboard uses a new server-verified run so edited local saves cannot set global scores. Choose how to play.",[
+      {label:"Keep local game",action:()=>{localStorage.setItem(CLOUD_CHOICE,"local");}},
+      {label:"Start verified run",action:()=>activateCloud(true)}
+    ]);
+  }
+  function applyCloudSnapshot(data,reset=false){
+    if(reset){const settings=state.settings;state=defaultState();state.settings=settings;}
+    state.money=safeNumber(data.balance);
+    state.lifetime=safeNumber(data.lifetimeCash);
+    state.runEarned=safeNumber(data.runEarned);
+    state.rebirths=safeNumber(data.rebirths);
+    state.empireTotal=safeNumber(data.empirePoints);
+    state.empireSpent=safeNumber(data.empireSpent);
+    state.totalClicks=safeNumber(data.totalClicks);
+    for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
+    state.upgrades=Array.isArray(data.upgrades)?data.upgrades:[];
+    state.prestigeUpgrades=Array.isArray(data.prestigeUpgrades)?data.prestigeUpgrades:[];
+    state.lastPlayed=Date.now();
+    checkAchievements();renderTop();renderOwned();renderCurrent();save();
+  }
+  async function activateCloud(backup){
+    if(!account.authenticated||account.needsUsername)return;
+    try{
+      if(backup&&!localStorage.getItem(LOCAL_BACKUP))localStorage.setItem(LOCAL_BACKUP,JSON.stringify(state));
+      const data=await apiJson("/api/progress/snapshot");
+      cloudMode=true;pendingClicks=0;buff=null;goldenExpires=0;$("goldenBill").hidden=true;applySettings();localStorage.setItem(CLOUD_CHOICE,"cloud");
+      applyCloudSnapshot(data,true);toast("Verified cloud run active");
+    }catch(error){toast(error.message||"Cloud progress unavailable.");}
+  }
+  async function postCloudAction(action){
+    const result=await apiJson("/api/progress/action",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({actionId:crypto.randomUUID(),...action})});
+    applyCloudSnapshot(result);
+    return result;
+  }
+  async function sendQueuedClicks(){
+    if(!cloudMode||pendingClicks<=0)return;
+    const count=pendingClicks;pendingClicks=0;
+    try{await postCloudAction({type:"click_batch",count});}
+    catch(error){pendingClicks+=count;throw error;}
+  }
+  function queueCloudAction(action){
+    if(!cloudMode)return;
+    cloudQueue=cloudQueue.then(async()=>{
+      await sendQueuedClicks();
+      if(action)await postCloudAction(action);
+      else if(Date.now()-lastCloudSync>30000){
+        const data=await apiJson("/api/progress/snapshot");applyCloudSnapshot(data);
+      }
+      lastCloudSync=Date.now();
+    }).catch(error=>{
+      toast(error.message||"Cloud progress is unavailable.");
+      if(pendingClicks>180)pendingClicks=180;
+    });
+  }
+  async function signOut(){
+    $("accountMenu").hidden=true;
+    if(cloudMode){queueCloudAction(null);await cloudQueue;}
+    try{await apiJson("/api/auth/signout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
+    catch(_){toast("Sign out failed. Try again.");return;}
+    cloudMode=false;pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");
+    account={authenticated:false,username:null,needsUsername:false};renderAccountControls();
+    await refreshPremiumStatus();renderTop();renderCurrent();toast("Signed out");
+  }
+  function showAccountDetails(){
+    if(account.needsUsername){showUsernamePrompt();return;}
+    const body=featureElement("div","account-details");
+    body.append(featureElement("p","","Username: "+account.username),featureElement("p","",cloudMode?"Verified cloud run active. Your browser save is also kept locally.":"Local game active. Your leaderboard progress is separate."));
+    if(localStorage.getItem(LOCAL_BACKUP))body.append(featureElement("p","","Your previous local save is backed up in this browser."));
+    const actions=[{label:"Close",action:()=>{}}];
+    if(!cloudMode)actions.push({label:"Use verified cloud run",action:()=>offerCloudChoice()});
+    if(localStorage.getItem(LOCAL_BACKUP))actions.push({label:"Restore browser save",action:()=>modal("Restore browser save","This switches to your saved local game. Your verified cloud run stays on your account.",[
+      {label:"Cancel",action:()=>{}},
+      {label:"Restore",action:()=>{try{const restored=normalize(JSON.parse(localStorage.getItem(LOCAL_BACKUP)));cloudMode=false;pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");state=restored;save();renderTop();renderOwned();renderCurrent();toast("Browser save restored");}catch(_){toast("Browser backup cannot be read.");}}}
+    ])});
+    modal("Account",body,actions);
+  }
+
   function save() {
     try {state.lastPlayed=Date.now();localStorage.setItem(SAVE_KEY,JSON.stringify(state));}
     catch (_) {toast("Browser storage is unavailable. Export your save to keep progress.");}
@@ -709,7 +850,7 @@
         const imported=normalize(raw);
         modal("Confirm Import","Replace this browser's current game with the imported save?",[
           {label:"Cancel",action:()=>{}},
-          {label:"Replace Save",action:()=>{state=imported;state.lastPlayed=Date.now();buff=null;goldenExpires=0;$("goldenBill").hidden=true;applySettings();save();afterAction();toast("Save imported");}}
+          {label:"Replace Save",action:()=>{cloudMode=false;localStorage.setItem(CLOUD_CHOICE,"local");state=imported;state.lastPlayed=Date.now();buff=null;goldenExpires=0;$("goldenBill").hidden=true;applySettings();save();afterAction();toast("Save imported");}}
         ]);
       } catch(_){toast("That save code is invalid.");}
     }}]);
@@ -717,7 +858,7 @@
   function resetGame() {
     modal("Reset Game","This permanently erases the Cash Empire save in this browser. Export it first if you want a backup.",[
       {label:"Cancel",action:()=>{}},
-      {label:"Erase Progress",action:()=>{state=defaultState();buff=null;goldenExpires=0;$("goldenBill").hidden=true;sessionStart=Date.now();applySettings();save();afterAction();toast("Game reset");}}
+      {label:"Erase Progress",action:()=>{cloudMode=false;localStorage.setItem(CLOUD_CHOICE,"local");state=defaultState();buff=null;goldenExpires=0;$("goldenBill").hidden=true;sessionStart=Date.now();applySettings();save();afterAction();toast("Game reset");}}
     ]);
   }
   function rebirth() {
@@ -725,6 +866,7 @@
     modal("Confirm Rebirth","You will gain "+format(gain)+" Empire Points. Cash, businesses, and regular upgrades reset. Achievements, lifetime earnings, Empire Points, and investments remain.",[
       {label:"Cancel",action:()=>{}},
       {label:"Rebirth",action:()=>{
+        if(cloudMode){queueCloudAction({type:"rebirth"});return;}
         const keep={lifetime:state.lifetime,achievements:state.achievements,prestigeUpgrades:state.prestigeUpgrades,
           empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
           totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
@@ -746,6 +888,7 @@
     if(!goldenExpires || Date.now()>goldenExpires)return;
     goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay()*(hasPrestige("lucky")?.7:1);
     state.goldenClicked++;
+    if(cloudMode){queueCloudAction({type:"golden"});return;}
     const roll=Math.random();
     if(roll<.25){buff={type:"goldrush",mult:10,clickMult:10,until:Date.now()+30000};toast("GOLD RUSH! Income and clicks ×10 for 30 seconds!");setTicker("GOLD RUSH • Every move turns to gold for 30 seconds.");}
     else if(roll<.49){buff={type:"income",mult:7,until:Date.now()+30000};toast("Golden Bill: income ×7 for 30 seconds!");}
@@ -759,15 +902,20 @@
     const away=Math.max(0,Math.min(Date.now()-state.lastPlayed,7*24*3600000));
     if(away<60000)return;
     const capped=Math.min(away/1000,(hasPrestige("nightshift")?16*3600:OFFLINE_CAP));
-    const earned=earnBusinesses(capped,false);
+    const production=baseRate();
+    const earned=earnBusinesses(capped*.5,false);
+    save();
     if(earned>0){
       const wrap=document.createElement("div"),p=document.createElement("p");
-      p.textContent="You were away for "+duration(away/1000)+". Your businesses earned "+euro(earned)+". Offline earnings are capped at "+(hasPrestige("nightshift")?16:10)+" hours.";
-      wrap.append(p);modal("Welcome Back",wrap,[{label:"Collect",action:()=>{}}]);
+      p.textContent="You were away for "+duration(away/1000)+". Production: "+euro(production,1)+"/sec. Offline efficiency: 50%. You earned "+euro(earned)+". The time cap is "+(hasPrestige("nightshift")?16:10)+" hours.";
+      pendingAccountRefresh=true;wrap.append(p);modal("Welcome Back",wrap,[{label:"Collect",action:()=>{}}]);
+      return true;
     }
   }
   function applySettings() {
     document.documentElement.classList.toggle("light",state.settings.light);
+    document.documentElement.classList.toggle("fit-screen",state.settings.fitScreen);
+    const fit=$("fitScreen");if(fit){fit.textContent="Fit screen: "+(state.settings.fitScreen?"ON":"OFF");fit.setAttribute("aria-pressed",String(state.settings.fitScreen));}
     document.documentElement.classList.toggle("reduce-motion",!state.settings.animations);
     document.documentElement.classList.toggle("gold-rush",Boolean(buff&&buff.type==="goldrush"&&buff.until>Date.now()));
   }
@@ -809,7 +957,7 @@
     const now=Date.now(),elapsed=Math.max(0,(now-lastTick)/1000);lastTick=now;
     if(elapsed>0){
       const productive=Math.min(elapsed,hasPrestige("nightshift")?16*3600:OFFLINE_CAP);
-      earnBusinesses(productive,true);
+      earnBusinesses(productive*(elapsed>60?.5:1),true);
       state.totalPlaytime+=Math.min(elapsed,productive);
     }
     if(buff&&now>=buff.until){buff=null;applySettings();toast("Bonus ended");}
@@ -818,6 +966,7 @@
     state.highestRate=Math.max(state.highestRate,currentRate());
     if(now>=ambientNext)spawnAmbientBill();
     if(now>=tickerNext)rotateTicker();
+    if(cloudMode&&now-lastCloudSync>30000)queueCloudAction(null);
     renderTop();
     if(now-renderTimer>600){renderCurrent();renderTimer=now;}
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
@@ -825,8 +974,8 @@
   async function init() {
     buildWealthArt();load();applySettings();renderTop();renderOwned();
     await refreshPremiumStatus();
-    applyOffline();
-    pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
+    if(!applyOffline())await refreshAccount();
+    pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode)pendingClicks++;effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
@@ -835,6 +984,10 @@
     $("exportSave").addEventListener("click",exportSave);
     $("importSave").addEventListener("click",importSave);
     $("resetGame").addEventListener("click",resetGame);
+    $("fitScreen").addEventListener("click",()=>{state.settings.fitScreen=!state.settings.fitScreen;applySettings();save();});
+    $("accountButton").addEventListener("click",()=>{$("accountMenu").hidden=!$("accountMenu").hidden;});
+    $("accountDetails").addEventListener("click",()=>{ $("accountMenu").hidden=true;showAccountDetails();});
+    $("signOut").addEventListener("click",signOut);
     $("rebirthButton").addEventListener("click",rebirth);
     $("modalClose").addEventListener("click",closeModal);
     $("featureClose").addEventListener("click",closeFeature);
@@ -842,10 +995,10 @@
     $("modalBackdrop").addEventListener("click",event=>{if(event.target===$("modalBackdrop"))closeModal();});
     document.addEventListener("keydown",event=>{if(event.key==="Escape"){closeModal();closeFeature();}});
     window.addEventListener("pagehide",save);
-    document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
+    document.addEventListener("visibilitychange",()=>{if(document.hidden){save();if(cloudMode)queueCloudAction(null);}});
     renderTop();renderOwned();renderCurrent();checkAchievements();rotateTicker();setInterval(tick,100);
     setInterval(save,10000);
   }
-  window.CashEmpireMath={totalCost,maxAffordable,format,businessUnitRate,earnBusinesses,configs:BUSINESS};
+  window.CashEmpireMath={totalCost,maxAffordable,format,businessUnitRate,earnBusinesses,getWealthVisualTier,configs:BUSINESS};
   init();
 })();

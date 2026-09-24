@@ -1,80 +1,101 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker,{testing,createSessionToken} from "../worker/index.mjs";
+import {readFileSync} from "node:fs";
+import {DatabaseSync} from "node:sqlite";
+import worker,{testing} from "../worker/index.mjs";
+import {validateUsername} from "../worker/auth.mjs";
 
 const businesses=Object.fromEntries(["collector","lemonade","newspaper","vending","shop","restaurant","supermarket","factory","bank","corporation","exchange","mega","global","moon","galactic","multiverse"].map(id=>[id,0]));
 const progress=(overrides={})=>({
   userId:"testuser123",balance:1000,lifetime:1000,runEarned:1000,rebirths:0,
-  empirePoints:0,empireSpent:0,totalClicks:0,lastClickMs:0,lastAccrualMs:100000,
+  empirePoints:0,empireSpent:0,totalClicks:0,lastClickMs:0,lastAccrualMs:100000,lastGoldenMs:0,
   businesses:{...businesses},upgrades:[],prestige:[],version:0,...overrides
 });
 
-test("server applies validated clicks, prices, and passive income",()=>{
+test("server batches clicks, validates prices, and halves offline passive income",()=>{
   const base=progress();
-  assert.equal(testing.applyAction(base,{type:"click"},100000,false).balance,1001);
-  assert.equal(testing.applyAction(base,{type:"click"},100000,true).balance,1002);
+  assert.equal(testing.applyAction(base,{type:"click_batch",count:1},100000,false).balance,1001);
+  assert.equal(testing.applyAction(base,{type:"click_batch",count:1},100000,true).balance,1002);
+  assert.throws(()=>testing.applyAction(base,{type:"click_batch",count:200},100000,false));
   assert.throws(()=>testing.applyAction(base,{type:"buy_business",businessId:"collector",quantity:0},100000,false));
   const bought=testing.applyAction(base,{type:"buy_business",businessId:"collector",quantity:1},100000,false);
   assert.equal(bought.balance,990);
   assert.equal(bought.businesses.collector,1);
-  const automated=testing.applyAction(progress({businesses:{...businesses,collector:10}}),{type:"click"},3700000,false);
-  assert.equal(automated.balance,4601);
-  assert.throws(()=>testing.applyAction(testing.applyAction(base,{type:"click"},100000,false),{type:"click"},100020,false));
+  const automated=testing.applyAction(progress({businesses:{...businesses,collector:10}}),{type:"click_batch",count:1},3700000,false);
+  assert.equal(automated.balance,2801);
+  assert.equal(automated.lifetime,2801);
+  const regular=testing.applyAction(progress({businesses:{...businesses,collector:10}}),{type:"click_batch",count:1},110000,false);
+  assert.equal(regular.balance,1011);
 });
 
-test("rebirth and entitlement cannot change pre-existing balance",()=>{
+test("rebirth, golden reward, and entitlement use server-calculated values",()=>{
   const reborn=testing.applyAction(progress({runEarned:10000000}),{type:"rebirth"},100000,false);
   assert.equal(reborn.rebirths,1);
   assert.equal(reborn.empirePoints,1);
   assert.equal(reborn.balance,0);
-  const premium=testing.applyAction(progress(),{type:"click"},100000,true);
+  const premium=testing.applyAction(progress(),{type:"click_batch",count:1},100000,true);
   assert.equal(premium.balance,1002);
   assert.equal(testing.businessRate(progress({businesses:{...businesses,collector:10}}),true),2);
+  const gold=testing.applyAction(progress(),{type:"golden"},200000,false);
+  assert.equal(gold.balance,1100);
+  assert.throws(()=>testing.applyAction(gold,{type:"golden"},201000,false));
 });
 
-test("malformed names and client-supplied totals are rejected",async()=>{
-  assert.equal(testing.sanitizeUsername("<script>"),null);
-  assert.equal(testing.sanitizeUsername("  Good Player  "),"Good Player");
-  const fakeDb={};
-  const response=await worker.fetch(new Request("https://game.example/api/progress",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lifetimeCash:999999999999})}),{DB:fakeDb});
+test("username validation rejects duplicates by normalization and obfuscation",()=>{
+  assert.deepEqual(validateUsername("CashKing92"),{ok:true,username:"CashKing92",normalized:"cashking92"});
+  assert.equal(validateUsername("cashking92").normalized,validateUsername("CASHKING92").normalized);
+  for(const value of ["ad_min","ADMIN","ＡＤＭＩＮ","b4dw0rd","baaaadword","b.a.d.w.o.r.d","\u200bad_m_in","a b","a","a".repeat(21),"pоrn"]){
+    assert.equal(validateUsername(value).ok,false,value);
+  }
+});
+
+test("migration enforces Google identity and case-insensitive username uniqueness",()=>{
+  const db=new DatabaseSync(":memory:");
+  db.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  db.prepare("INSERT INTO users(id,username,created_at_ms,google_subject,username_normalized,username_set) VALUES(?,?,?,?,?,1)")
+    .run("one","CashKing",1,"google-one","cashking");
+  assert.throws(()=>db.prepare("INSERT INTO users(id,username,created_at_ms,google_subject,username_normalized,username_set) VALUES(?,?,?,?,?,1)")
+    .run("two","cashking",2,"google-two","cashking"));
+  assert.throws(()=>db.prepare("INSERT INTO users(id,username,created_at_ms,google_subject,username_normalized,username_set) VALUES(?,?,?,?,?,1)")
+    .run("three","OtherUser",3,"google-one","otheruser"));
+  db.close();
+});
+
+test("client-supplied totals are refused",async()=>{
+  const response=await worker.fetch(new Request("https://game.example/api/progress",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lifetimeCash:999999999999})}),{DB:{}});
   assert.equal(response.status,400);
 });
 
-test("guest Store cannot claim an entitlement or checkout",async()=>{
+test("Store remains unavailable without a signed-in account or payment configuration",async()=>{
   const status=await worker.fetch(new Request("https://game.example/api/store/status"),{});
   assert.deepEqual(await status.json(),{authenticated:false,paymentsAvailable:false,entitlements:{double_money:false}});
   const checkout=await worker.fetch(new Request("https://game.example/api/store/checkout",{method:"POST"}),{DB:{}});
   assert.equal(checkout.status,503);
 });
 
-test("session token and webhook signature are cryptographically checked",async()=>{
-  const token=await createSessionToken("testuser123","a-long-test-secret",Date.now()+60000);
-  assert.match(token,/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/);
+test("Google login is configured server-side and redirects with state, nonce and PKCE",async()=>{
+  const unavailable=await worker.fetch(new Request("https://clickthecash.online/api/auth/google/start"),{DB:{}});
+  assert.equal(unavailable.status,503);
+  const db={prepare(){return {bind(){return this},async run(){return {meta:{changes:1}}},async first(){return {count:1}}}}};
+  const response=await worker.fetch(new Request("https://clickthecash.online/api/auth/google/start"),{
+    DB:db,SESSION_SECRET:"long-private-secret",GOOGLE_CLIENT_ID:"test-client",GOOGLE_CLIENT_SECRET:"test-secret",PUBLIC_SITE_URL:"https://clickthecash.online"
+  });
+  assert.equal(response.status,302);
+  const location=new URL(response.headers.get("Location"));
+  assert.equal(location.origin,"https://accounts.google.com");
+  assert.equal(location.searchParams.get("redirect_uri"),"https://clickthecash.online/api/auth/google/callback");
+  assert.ok(location.searchParams.get("state"));
+  assert.ok(location.searchParams.get("nonce"));
+  assert.equal(location.searchParams.get("code_challenge_method"),"S256");
+  assert.match(response.headers.get("Set-Cookie"),/HttpOnly; SameSite=Lax; Secure/);
+});
+
+test("webhook signature rejects tampering",async()=>{
   const raw='{"id":"evt_test"}',timestamp=Math.floor(Date.now()/1000);
   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode("whsec_test"),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
   const bytes=new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(timestamp+"."+raw)));
   const signature=[...bytes].map(byte=>byte.toString(16).padStart(2,"0")).join("");
   assert.equal(await testing.verifyStripeSignature(raw,"t="+timestamp+",v1="+signature,"whsec_test"),true);
   assert.equal(await testing.verifyStripeSignature(raw+"x","t="+timestamp+",v1="+signature,"whsec_test"),false);
-});
-
-test("entitlement requires a valid signed session and D1 row",async()=>{
-  const secret="another-long-test-secret";
-  const token=await createSessionToken("testuser123",secret,Date.now()+60000);
-  const db={prepare(sql){return {
-    bind(){return this},
-    async run(){return {meta:{changes:1}}},
-    async first(){
-      if(sql.includes("FROM users"))return {id:"testuser123",username:"Tester"};
-      if(sql.includes("FROM entitlements"))return {owned:1};
-      if(sql.includes("SELECT count FROM api_rate_limits"))return {count:1};
-      return null;
-    }
-  }}};
-  const makeRequest=value=>new Request("https://game.example/api/store/status",{headers:{Cookie:"ce_session="+value}});
-  const valid=await worker.fetch(makeRequest(token),{DB:db,SESSION_SECRET:secret});
-  assert.equal((await valid.json()).entitlements.double_money,true);
-  const forged=token.slice(0,-1)+(token.endsWith("0")?"1":"0");
-  const invalid=await worker.fetch(makeRequest(forged),{DB:db,SESSION_SECRET:secret});
-  assert.equal((await invalid.json()).entitlements.double_money,false);
 });
