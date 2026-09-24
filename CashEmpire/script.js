@@ -227,7 +227,7 @@
     ring.replaceChildren();
     for(const [index,slot] of visual.slots.entries()){
       const item=document.createElement("span");
-      item.className="collector";
+      item.className="collector collector-"+(slot.y<=13.1?"top":slot.y>=86.9?"bottom":slot.x<50?"left":"right");
       item.textContent="€";
       item.style.setProperty("--x",slot.x+"%");
       item.style.setProperty("--y",slot.y+"%");
