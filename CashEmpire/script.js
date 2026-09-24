@@ -73,7 +73,7 @@
     if (tier <= 0) return sign + n.toLocaleString("en-US",{maximumFractionDigits:decimals});
     const scaled = n / Math.pow(1000,tier);
     const digits = scaled < 10 ? 2 : scaled < 100 ? 1 : 0;
-    return sign + scaled.toFixed(digits).replace(/\.?0+$/,"") + " " + SUFFIXES[tier];
+    return sign + (digits ? scaled.toFixed(digits).replace(/\.?0+$/,"") : scaled.toFixed(0)) + " " + SUFFIXES[tier];
   }
   const euro = (n,d=0) => "€" + format(n,d);
   function duration(seconds) {
@@ -100,7 +100,7 @@
   }
   function selectedQuantity(b) {
     const max = maxAffordable(b,state.businesses[b.id],state.money);
-    return buyAmount === "max" ? max : Math.min(Number(buyAmount),max);
+    return buyAmount === "max" ? max : (Number(buyAmount) <= max ? Number(buyAmount) : 0);
   }
   function displayedQuantity(b) {
     return buyAmount === "max" ? maxAffordable(b,state.businesses[b.id],state.money) : Number(buyAmount);
