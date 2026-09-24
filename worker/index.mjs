@@ -394,4 +394,3 @@ export default {
   }
 };
 export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,verifyStripeSignature,loadProgress};
-
