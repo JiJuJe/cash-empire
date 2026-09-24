@@ -55,3 +55,8 @@
   .play-footer{padding-top:16px}
   .collector-status{font-size:10px}
 }
+
+.collector-left .collector-group{left:-8px;right:auto}
+.collector-bottom .collector-group{top:auto;bottom:-8px}
+.collector-top .collector-group{top:-8px}
+@media(max-width:340px){.collector-ring{--collector-size:30px;--collector-font:17px}.collector-ring[data-tier="medium"]{--collector-size:24px;--collector-font:14px}.collector-ring[data-tier="high"]{--collector-size:20px;--collector-font:12px}.collector-ring[data-tier="army"]{--collector-size:18px;--collector-font:11px}}
