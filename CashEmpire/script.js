@@ -207,7 +207,7 @@
     const suffixes=["","k","m","b","t","q","Q","s","S"];
     const tier=Math.min(Math.floor(Math.log10(amount)/3),suffixes.length-1);
     const scaled=amount/Math.pow(1000,tier);
-    return (scaled<10?scaled.toFixed(1).replace(/\\.0$/,""):scaled.toFixed(0))+suffixes[tier];
+    return (scaled<10?scaled.toFixed(1).replace(/\.0$/,""):scaled.toFixed(0))+suffixes[tier];
   }
   function collectorVisuals(owned) {
     const count=Math.min(52,owned),tier=owned<=10?"low":owned<=30?"medium":owned<=75?"high":"army";
