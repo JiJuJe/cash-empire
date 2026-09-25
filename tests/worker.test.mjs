@@ -8,7 +8,7 @@ import {validateUsername} from "../worker/auth.mjs";
 const businesses=Object.fromEntries(["collector","lemonade","newspaper","vending","shop","restaurant","supermarket","factory","bank","corporation","exchange","mega","global","moon","galactic","multiverse"].map(id=>[id,0]));
 const progress=(overrides={})=>({
   userId:"testuser123",balance:1000,lifetime:1000,runEarned:1000,rebirths:0,
-  empirePoints:0,empireSpent:0,totalClicks:0,lastClickMs:0,lastAccrualMs:100000,lastGoldenMs:0,
+  empirePoints:0,empireSpent:0,totalClicks:0,lastAccrualMs:100000,lastGoldenMs:0,
   businesses:{...businesses},upgrades:[],prestige:[],version:0,...overrides
 });
 
@@ -16,7 +16,9 @@ test("server batches clicks, validates prices, and halves offline passive income
   const base=progress();
   assert.equal(testing.applyAction(base,{type:"click_batch",count:1},100000,false).balance,1001);
   assert.equal(testing.applyAction(base,{type:"click_batch",count:1},100000,true).balance,1002);
-  assert.throws(()=>testing.applyAction(base,{type:"click_batch",count:200},100000,false));
+  assert.throws(()=>testing.applyAction(base,{type:"click_batch",count:1001},100000,false));
+  assert.throws(()=>testing.applyAction(base,{type:"click_batch",count:1.5},100000,false));
+  assert.throws(()=>testing.applyAction(base,{type:"click_batch",count:0},100000,false));
   assert.throws(()=>testing.applyAction(base,{type:"buy_business",businessId:"collector",quantity:0},100000,false));
   const bought=testing.applyAction(base,{type:"buy_business",businessId:"collector",quantity:1},100000,false);
   assert.equal(bought.balance,990);
@@ -28,7 +30,7 @@ test("server batches clicks, validates prices, and halves offline passive income
   assert.equal(regular.balance,1011);
 });
 
-test("60 seconds of manual click batches survive interleaved purchases without weakening the click rate",()=>{
+test("60 seconds of manual click batches survive interleaved purchases",()=>{
   let state=progress({balance:100000,lifetime:100000,runEarned:100000});
   for(let batch=0;batch<30;batch++){
     const now=100000+batch*2000;
@@ -37,10 +39,11 @@ test("60 seconds of manual click batches survive interleaved purchases without w
   }
   assert.equal(state.totalClicks,720);
   assert.equal(state.businesses.collector,30);
-  assert.throws(()=>testing.applyAction(state,{type:"click_batch",count:37},160000,false),/Invalid click batch/);
-  const fresh=testing.applyAction(progress(),{type:"click_batch",count:24},100000,false);
-  assert.throws(()=>testing.applyAction(fresh,{type:"click_batch",count:24},100100,false),/Invalid click batch/);
-  assert.equal(testing.applyAction(fresh,{type:"click_batch",count:24},102000,false).totalClicks,48);
+  const fresh=testing.applyAction(progress(),{type:"click_batch",count:1000},100000,false);
+  const immediate=testing.applyAction(fresh,{type:"click_batch",count:1000},100000,false);
+  assert.equal(immediate.totalClicks,2000);
+  assert.equal(testing.applyAction(immediate,{type:"click_batch",count:37},100000,false).totalClicks,2037);
+  assert.throws(()=>testing.applyAction(immediate,{type:"click_batch",count:1001},100000,false),/Invalid click batch/);
 });
 
 test("two minutes of clicking, purchases and upgrades preserve legitimate batches",()=>{
@@ -60,6 +63,17 @@ test("two minutes of clicking, purchases and upgrades preserve legitimate batche
   assert.equal(state.businesses.newspaper,100);
   assert.ok(state.upgrades.includes("wallet"));
   assert.ok(state.lifetime>1e12);
+});
+
+test("autoclicker batches at the same instant remain valid around purchases",()=>{
+  let state=progress({balance:1e9,lifetime:1e9,runEarned:1e9});
+  for(let i=0;i<100;i++){
+    state=testing.applyAction(state,{type:"click_batch",count:1000},100000,false);
+    if(i%20===0)state=testing.applyAction(state,{type:"buy_business",businessId:"collector",quantity:1},100000,false);
+  }
+  assert.equal(state.totalClicks,100000);
+  assert.equal(state.businesses.collector,5);
+  assert.ok(state.lifetime>1e9);
 });
 
 test("rebirth, golden reward, and entitlement use server-calculated values",()=>{

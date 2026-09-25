@@ -69,9 +69,9 @@
   let premiumMultiplier = 1;
   let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false};
   let account={authenticated:false,username:null,needsUsername:false};
-  const CLOUD_BATCH_SIZE=24,CLOUD_FLUSH_MS=2500,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:";
+  const CLOUD_BATCH_SIZE=1000,CLOUD_FLUSH_MS=1500,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v2:",LEGACY_CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",LEGACY_CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:";
   let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[];
-  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0,cloudRetryStoppedAt=0,cloudSyncRequested=false,lastClickBatchSentAt=0;
+  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0,cloudRetryStoppedAt=0,cloudSyncRequested=false;
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
@@ -812,7 +812,8 @@
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
   }
   function cloudOutboxKey(){return CLOUD_OUTBOX_PREFIX+(account.username||"unknown");}
-  function cloudLastBatchKey(){return CLOUD_LAST_BATCH_PREFIX+(account.username||"unknown");}
+  function legacyCloudOutboxKey(){return LEGACY_CLOUD_OUTBOX_PREFIX+(account.username||"unknown");}
+  function legacyCloudLastBatchKey(){return LEGACY_CLOUD_LAST_BATCH_PREFIX+(account.username||"unknown");}
   function persistCloudOutbox(){
     try{
       if(cloudOutbox.length)localStorage.setItem(cloudOutboxKey(),JSON.stringify(cloudOutbox));
@@ -821,12 +822,23 @@
   }
   function restoreCloudOutbox(){
     try{
-      const saved=JSON.parse(localStorage.getItem(cloudOutboxKey())||"[]");
-      lastClickBatchSentAt=Math.min(Date.now(),Math.max(0,Number(localStorage.getItem(cloudLastBatchKey()))||0));
-      cloudOutbox=Array.isArray(saved)?saved.filter(op=>op&&typeof op==="object"&&
-        /^[A-Za-z0-9_-]{12,80}$/.test(op.actionId)&&
+      const current=localStorage.getItem(cloudOutboxKey());
+      const legacy=localStorage.getItem(legacyCloudOutboxKey());
+      const parse=text=>{try{return JSON.parse(text||"[]");}catch(_){return [];}};
+      const currentActions=parse(current),legacyActions=parse(legacy);
+      const saved=[...(Array.isArray(currentActions)?currentActions:[]),
+        ...(Array.isArray(legacyActions)?legacyActions.filter(op=>op?.type!=="click_batch"):[])];
+      const seen=new Set();
+      cloudOutbox=saved.filter(op=>op&&typeof op==="object"&&
+        /^[A-Za-z0-9_-]{12,80}$/.test(op.actionId)&&!seen.has(op.actionId)&&
         ["click_batch","golden","buy_business","buy_upgrade","buy_prestige","rebirth"].includes(op.type)&&
-        (op.type!=="click_batch"||Number.isInteger(op.count)&&op.count>=1&&op.count<=CLOUD_BATCH_SIZE)):[];
+        (op.type!=="click_batch"||Number.isInteger(op.count)&&op.count>=1&&op.count<=CLOUD_BATCH_SIZE)&&
+        (seen.add(op.actionId),true));
+      // Write safe actions first; only then remove obsolete click queues and pacing data.
+      if(cloudOutbox.length)localStorage.setItem(cloudOutboxKey(),JSON.stringify(cloudOutbox));
+      else localStorage.removeItem(cloudOutboxKey());
+      localStorage.removeItem(legacyCloudOutboxKey());
+      localStorage.removeItem(legacyCloudLastBatchKey());
     }catch(_){cloudOutbox=[];}
   }
   function stagePendingClicks(){
@@ -870,16 +882,10 @@
     cloudQueue=(async()=>{
       while(cloudMode&&cloudOutbox.length){
         const action=cloudOutbox[0];
-        if(action.type==="click_batch"&&lastClickBatchSentAt){
-          const ready=lastClickBatchSentAt+action.count*1000/12;
-          if(Date.now()<ready)await new Promise(resolve=>setTimeout(resolve,ready-Date.now()));
-          if(!cloudMode)break;
-        }
         try{
           const data=await postCloudAction(action);
           cloudOutbox.shift();persistCloudOutbox();
           if(cloudMode)applyCloudSnapshot(data);
-          if(action.type==="click_batch"){lastClickBatchSentAt=Date.now();try{localStorage.setItem(cloudLastBatchKey(),String(lastClickBatchSentAt));}catch(_){}}
           cloudRetryCount=0;cloudRetryStoppedAt=0;lastCloudSync=Date.now();
         }catch(error){
           if(error.status>=400&&error.status<500&&error.status!==409&&error.status!==429){

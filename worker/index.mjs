@@ -44,7 +44,7 @@ function loadProgress(row){
   return {
     userId:row.user_id,balance:capped(row.balance),lifetime:capped(row.lifetime_cash),
     runEarned:capped(row.run_earned),rebirths:row.rebirths,empirePoints:row.empire_points,
-    empireSpent:row.empire_spent,totalClicks:row.total_clicks,lastClickMs:row.last_click_ms,
+    empireSpent:row.empire_spent,totalClicks:row.total_clicks,
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
     version:row.version
@@ -94,22 +94,15 @@ function upgradeFor(s,id){
       return {id,cost:Math.ceil(b.cost*count*costFactor),mult};
   return null;
 }
-const CLICK_BATCH_MAX=36,CLICK_RATE_PER_SECOND=12;
-function clickAllowance(s,now){
-  // last_click_ms is a virtual refill timestamp. Existing real timestamps remain valid.
-  if(!s.lastClickMs)return CLICK_BATCH_MAX;
-  return Math.max(0,Math.min(CLICK_BATCH_MAX,
-    Math.floor(CLICK_BATCH_MAX+(now-s.lastClickMs)*CLICK_RATE_PER_SECOND/1000)));
-}
+const CLICK_BATCH_TECHNICAL_MAX=1000;
 function applyAction(current,action,now,entitled){
   const s=structuredClone(current);
   advance(s,now,entitled);
   if(action.type==="click_batch"){
-    const count=action.count,allowance=clickAllowance(s,now);
-    if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_MAX||count>allowance)
+    const count=action.count;
+    if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_TECHNICAL_MAX)
       throw Error("Invalid click batch.");
     award(s,clickRate(s,entitled)*count);s.totalClicks+=count;
-    s.lastClickMs=Math.round(now+(CLICK_BATCH_MAX-(allowance-count))*1000/CLICK_RATE_PER_SECOND);
   }else if(action.type==="golden"){
     if(now-s.lastGoldenMs<180000)throw Error("Golden Bill is not ready.");
     award(s,Math.max(100,businessRate(s,entitled)*180,clickRate(s,entitled)*50));s.lastGoldenMs=now;
@@ -219,11 +212,11 @@ function progressSummary(s,entitled){
 function updateStatement(env,s,oldVersion,entitled){
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
   return env.DB.prepare(`UPDATE progress SET balance=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
-    total_clicks=?,last_click_ms=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
+    total_clicks=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
     businesses_json=?,upgrades_json=?,prestige_json=?,version=version+1
     WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
-      s.totalClicks,s.lastClickMs,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
+      s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),s.userId,oldVersion
     );
 }
@@ -242,7 +235,6 @@ async function getProgress(env,user){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  await rateLimit(env,request,"progress-all:"+user.id,600);
   const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count"]);
   if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
   const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
@@ -250,7 +242,8 @@ async function postProgress(request,env,user){
   const bucket=action.type==="click_batch"?"progress-click:"+user.id:
     action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"?"progress-purchase:"+user.id:
     "progress-special:"+user.id;
-  await rateLimit(env,request,bucket,action.type==="click_batch"?240:bucket.startsWith("progress-purchase:")?300:60);
+  await rateLimit(env,request,"progress-all:"+user.id,10000);
+  await rateLimit(env,request,bucket,action.type==="click_batch"?6000:bucket.startsWith("progress-purchase:")?300:60);
   const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(action.actionId).first();
   if(prior){
     if(prior.user_id!==user.id||prior.action_type!==action.type)fail(409,"Action ID conflict.");
