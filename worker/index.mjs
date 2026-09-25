@@ -202,7 +202,7 @@ function leaderboardEntry(row,userId){
   return {rank:Number(row.rank),username:sanitizeUsername(row.username)||"Player",lifetimeCash:capped(row.lifetime_cash),rebirths:Math.max(0,Number(row.rebirths)||0),isSelf:row.id===userId};
 }
 async function getLeaderboard(request,env,user){
-  await rateLimit(env,request,"leaderboard",30);
+  await rateLimit(env,request,"leaderboard:"+(user?.id||"guest"),120);
   const now=Date.now();
   const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=100 ORDER BY rank").bind(now,now).all();
   const players=(top.results||[]).map(row=>leaderboardEntry(row,user?.id));
@@ -242,7 +242,7 @@ async function getProgress(env,user){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  await rateLimit(env,request,"progress-all:"+user.id,420);
+  await rateLimit(env,request,"progress-all:"+user.id,600);
   const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count"]);
   if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
   const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
@@ -250,7 +250,7 @@ async function postProgress(request,env,user){
   const bucket=action.type==="click_batch"?"progress-click:"+user.id:
     action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"?"progress-purchase:"+user.id:
     "progress-special:"+user.id;
-  await rateLimit(env,request,bucket,action.type==="click_batch"?90:bucket.startsWith("progress-purchase:")?300:60);
+  await rateLimit(env,request,bucket,action.type==="click_batch"?240:bucket.startsWith("progress-purchase:")?300:60);
   const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(action.actionId).first();
   if(prior){
     if(prior.user_id!==user.id||prior.action_type!==action.type)fail(409,"Action ID conflict.");
@@ -289,7 +289,7 @@ function paymentsConfigured(env){
   return Boolean(env.DB&&env.STRIPE_SECRET_KEY&&env.STRIPE_WEBHOOK_SECRET&&env.PUBLIC_SITE_URL);
 }
 async function storeStatus(request,env,user){
-  if(env.DB)await rateLimit(env,request,"store-status",60);
+  if(env.DB)await rateLimit(env,request,"store-status:"+(user?.id||"guest"),120);
   const owned=user?await hasDoubleMoney(env,user.id):false;
   return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements:{double_money:owned}});
 }

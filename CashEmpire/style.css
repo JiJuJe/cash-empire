@@ -472,3 +472,38 @@ h1,h2,h3,p{margin-top:0}
   .play-header{flex-wrap:wrap}
   .music-controls{margin-left:38px}
 }
+/* The progress strip keeps each full label intact at every viewport and zoom level. */
+.progress-area{min-width:0}
+.progress-area .tabs{
+  display:flex;
+  width:100%;
+  min-width:0;
+  flex-wrap:nowrap;
+  gap:clamp(8px,.65vw,12px);
+  padding-inline:clamp(8px,1vw,16px);
+  overflow-x:auto;
+  overflow-y:hidden;
+  scroll-padding-inline:12px;
+  -webkit-overflow-scrolling:touch;
+}
+.progress-area .tab{
+  flex:0 0 auto;
+  min-width:max-content;
+  white-space:nowrap;
+  font-size:clamp(10px,.75vw,12px);
+  padding-inline:clamp(8px,.6vw,12px);
+}
+@media(max-width:600px){
+  .progress-area .tabs{gap:8px;padding-inline:8px}
+  .progress-area .tab{font-size:clamp(10px,2.5vw,11px);padding-inline:8px}
+}
+
+/* Zoomed phone view: keep essential controls inside the viewport. */
+@media(max-width:350px){
+  .market-ticker{justify-content:flex-end;overflow:hidden}
+  .ticker-label{display:none}
+  .store-badge{display:none}
+  .buy-row{flex-wrap:wrap;padding:7px 9px}
+  .buy-options{width:100%;gap:3px}
+  .buy-option{flex:1 1 0;min-width:0;padding:6px 3px}
+}

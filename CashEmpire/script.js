@@ -71,7 +71,7 @@
   let account={authenticated:false,username:null,needsUsername:false};
   const CLOUD_BATCH_SIZE=24,CLOUD_FLUSH_MS=2500,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:";
   let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[];
-  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0,cloudSyncRequested=false,lastClickBatchSentAt=0;
+  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0,cloudRetryStoppedAt=0,cloudSyncRequested=false,lastClickBatchSentAt=0;
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
@@ -248,11 +248,15 @@
       $("particleLayer").append(note);setTimeout(() => note.remove(),750);
     }
   }
+  const recentToasts=new Map();
   function toast(message,achievement=false) {
-    const stack=$("toastStack");
+    const stack=$("toastStack"),now=Date.now();
     const existing=[...stack.children].find(node=>node.textContent===message);
     if(existing){clearTimeout(existing.dismissTimer);existing.dismissTimer=setTimeout(()=>existing.remove(),3500);return;}
-    if(stack.children.length>=4){clearTimeout(stack.firstElementChild.dismissTimer);stack.firstElementChild.remove();}
+    if(!achievement&&now-(recentToasts.get(message)||0)<8000)return;
+    recentToasts.set(message,now);
+    if(recentToasts.size>30)for(const [key,time] of recentToasts)if(now-time>8000)recentToasts.delete(key);
+    if(stack.children.length>=3){clearTimeout(stack.firstElementChild.dismissTimer);stack.firstElementChild.remove();}
     const node=document.createElement("div");node.className="toast"+(achievement?" achievement-toast":"");node.textContent=message;
     stack.append(node);node.dismissTimer=setTimeout(()=>node.remove(),3500);
   }
@@ -837,7 +841,11 @@
   }
   function scheduleClickFlush(){
     if(cloudClickTimer||!cloudMode)return;
-    cloudClickTimer=setTimeout(()=>{stagePendingClicks();startCloudDrain();},CLOUD_FLUSH_MS);
+    cloudClickTimer=setTimeout(()=>{
+      stagePendingClicks();
+      if(cloudRetryStoppedAt&&Date.now()-cloudRetryStoppedAt>=15000){cloudRetryStoppedAt=0;cloudRetryCount=0;}
+      startCloudDrain();
+    },CLOUD_FLUSH_MS);
   }
   async function activateCloud(backup){
     if(!account.authenticated||account.needsUsername||cloudMode)return;
@@ -857,7 +865,7 @@
     catch(_){/* The next successful action or scheduled sync will refresh the view. */}
   }
   function startCloudDrain(){
-    if(!cloudMode||cloudBusy||cloudRetryTimer)return cloudQueue;
+    if(!cloudMode||cloudBusy||cloudRetryTimer||cloudRetryStoppedAt)return cloudQueue;
     cloudBusy=true;
     cloudQueue=(async()=>{
       while(cloudMode&&cloudOutbox.length){
@@ -872,7 +880,7 @@
           cloudOutbox.shift();persistCloudOutbox();
           if(cloudMode)applyCloudSnapshot(data);
           if(action.type==="click_batch"){lastClickBatchSentAt=Date.now();try{localStorage.setItem(cloudLastBatchKey(),String(lastClickBatchSentAt));}catch(_){}}
-          cloudRetryCount=0;lastCloudSync=Date.now();
+          cloudRetryCount=0;cloudRetryStoppedAt=0;lastCloudSync=Date.now();
         }catch(error){
           if(error.status>=400&&error.status<500&&error.status!==409&&error.status!==429){
             cloudOutbox.shift();
@@ -882,13 +890,18 @@
             }
             persistCloudOutbox();await resyncCloud();
             toast(error.message||"Cloud action was rejected. Progress was refreshed.");
-            cloudRetryCount=0;lastCloudSync=Date.now();
+            cloudRetryCount=0;cloudRetryStoppedAt=0;lastCloudSync=Date.now();
             continue;
           }
-          cloudRetryCount=Math.min(cloudRetryCount+1,6);
-          const delay=Math.min(30000,500*Math.pow(2,cloudRetryCount));
-          cloudRetryTimer=setTimeout(()=>{cloudRetryTimer=0;startCloudDrain();},delay);
-          if(cloudRetryCount===1)toast("Cloud sync paused. Reconnecting...");
+          cloudRetryCount++;
+          if(cloudRetryCount>=6){
+            cloudRetryStoppedAt=Date.now();
+            toast("Cloud sync paused. Your actions are saved in this browser and will retry when you reconnect.");
+          }else{
+            const delay=Math.min(15000,500*Math.pow(2,cloudRetryCount));
+            cloudRetryTimer=setTimeout(()=>{cloudRetryTimer=0;startCloudDrain();},delay);
+            if(cloudRetryCount===1)toast("Cloud sync paused. Reconnecting...");
+          }
           break;
         }
       }
@@ -907,6 +920,7 @@
     if(action){
       cloudOutbox.push({actionId:crypto.randomUUID(),...action});
       persistCloudOutbox();
+      if(cloudRetryStoppedAt){cloudRetryStoppedAt=0;cloudRetryCount=0;}
     }else if(!cloudOutbox.length&&Date.now()-lastCloudSync>30000)cloudSyncRequested=true;
     return startCloudDrain();
   }
@@ -1123,6 +1137,9 @@
     $("featureBackdrop").addEventListener("click",event=>{if(event.target===$("featureBackdrop"))closeFeature();});
     $("modalBackdrop").addEventListener("click",event=>{if(event.target===$("modalBackdrop"))closeModal();});
     document.addEventListener("keydown",event=>{if(event.key==="Escape"){closeModal();closeFeature();}});
+    window.addEventListener("online",()=>{
+      if(cloudMode&&cloudOutbox.length){cloudRetryStoppedAt=0;cloudRetryCount=0;clearTimeout(cloudRetryTimer);cloudRetryTimer=0;startCloudDrain();}
+    });
     window.addEventListener("pagehide",()=>{save();if(cloudMode)queueCloudAction(null);});
     document.addEventListener("visibilitychange",()=>{if(document.hidden){save();if(cloudMode)queueCloudAction(null);}});
     renderTop();renderOwned();renderCurrent();checkAchievements();rotateTicker();setInterval(tick,100);

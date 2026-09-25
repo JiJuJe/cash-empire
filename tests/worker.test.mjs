@@ -43,6 +43,25 @@ test("60 seconds of manual click batches survive interleaved purchases without w
   assert.equal(testing.applyAction(fresh,{type:"click_batch",count:24},102000,false).totalClicks,48);
 });
 
+test("two minutes of clicking, purchases and upgrades preserve legitimate batches",()=>{
+  let state=progress({balance:1e12,lifetime:1e12,runEarned:1e12});
+  for(let batch=0;batch<48;batch++){
+    const now=200000+batch*2500;
+    state=testing.applyAction(state,{type:"click_batch",count:24},now,false);
+    const business=batch===0?"lemonade":batch===1?"newspaper":"collector";
+    const quantity=batch===0?10:batch===1?100:1;
+    state=testing.applyAction(state,{type:"buy_business",businessId:business,quantity},now+100,false);
+    if(batch===2)state=testing.applyAction(state,{type:"buy_upgrade",upgradeId:"wallet"},now+200,false);
+    if(batch===4)state=testing.applyAction(state,{type:"golden"},now+300,false);
+  }
+  assert.equal(state.totalClicks,48*24);
+  assert.equal(state.businesses.collector,46);
+  assert.equal(state.businesses.lemonade,10);
+  assert.equal(state.businesses.newspaper,100);
+  assert.ok(state.upgrades.includes("wallet"));
+  assert.ok(state.lifetime>1e12);
+});
+
 test("rebirth, golden reward, and entitlement use server-calculated values",()=>{
   const reborn=testing.applyAction(progress({runEarned:10000000}),{type:"rebirth"},100000,false);
   assert.equal(reborn.rebirths,1);

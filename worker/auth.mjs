@@ -162,7 +162,7 @@ async function googleCallback(request,env){
 async function usernameRoute(request,env,user,checkOnly){
   if(!user)return json({error:"Sign in required."},401);
   if(!sameOrigin(request))return json({error:"Invalid request origin."},403);
-  if(!await throttle(env,request,checkOnly?"username-check":"username-set",checkOnly?30:8))return json({error:"Try again shortly."},429);
+  if(!await throttle(env,request,(checkOnly?"username-check:":"username-set:")+user.id,checkOnly?60:8))return json({error:"Try again shortly."},429);
   let body;
   try{body=await bodyJson(request);}catch(_){return json({error:"Invalid request."},400);}
   if(!body||Object.keys(body).length!==1||!Object.hasOwn(body,"username"))return json({error:"Invalid request."},400);
