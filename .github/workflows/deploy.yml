@@ -38,7 +38,7 @@ jobs:
             css=$(curl -fsSL "https://jijuje.github.io/cash-empire/style.css?v=$GITHUB_SHA" || true)
             image_status=$(curl -sL -o /dev/null -w "%{http_code}" "https://jijuje.github.io/cash-empire/assets/cash-collector.png?v=$GITHUB_SHA")
             audio_status=$(curl -sL -o /dev/null -w "%{http_code}" "https://jijuje.github.io/cash-empire/assets/audio/background.wav?v=$GITHUB_SHA")
-            if [[ "$html" == *"music-nav-1"* && "$js" == *"renderLeaderboard"* && "$css" == *".feature-modal"* && "$image_status" == "200" && "$audio_status" == "200" ]]; then
+            if [[ "$html" == *"cloud-nav-2"* && "$js" == *"cloudRetryStoppedAt"* && "$css" == *".feature-modal"* && "$image_status" == "200" && "$audio_status" == "200" ]]; then
               echo "Live game assets match the deployed redesign."
               exit 0
             fi
