@@ -4,24 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#11251c">
-  <meta name="description" content="Cash Empire — build a business fortune, one tap at a time.">
-  <title>Cash Empire</title>
-  <link rel="stylesheet" href="style.css?v=unlimited-clicks-1">
-  <script src="script.js?v=unlimited-clicks-1" defer></script>
+  <meta name="description" content="ClickTheCash — build a business fortune, one tap at a time.">
+  <title>ClickTheCash</title>
+  <link rel="stylesheet" href="style.css?v=progression-1">
+  <script src="script.js?v=progression-1" defer></script>
 </head>
 <body>
   <div class="game-shell">
     <div class="market-ticker"><span class="ticker-label"><span class="live-dot"></span> MARKET WIRE</span><span id="tickerText" class="ticker-text">The market is open. Every tap counts.</span><button id="fitScreen" class="fit-screen-toggle" type="button" aria-pressed="false">Fit screen: OFF</button><div id="accountControls" class="account-controls"><a id="googleSignIn" href="/api/auth/google/start">Sign in with Google</a><button id="accountButton" type="button" hidden></button><div id="accountMenu" class="account-menu" hidden><strong id="accountUsername"></strong><button id="accountDetails" type="button">Account</button><button id="signOut" type="button">Sign out</button></div></div></div>
     <main class="columns">
       <section class="play-column" aria-label="Cash collection">
-        <header class="play-header"><div class="brand-mark">$</div><div class="brand-copy"><span class="brand-kicker">BUILD YOUR FORTUNE</span><h1>CASH EMPIRE</h1></div><div class="music-controls" role="group" aria-label="Background music"><span class="music-label">MUSIC</span><button id="musicMute" type="button" aria-label="Mute background music" aria-pressed="false">ON</button><input id="musicVolume" type="range" min="0" max="100" value="30" aria-label="Music volume"><span id="musicVolumeValue" class="music-volume-value">30%</span></div></header><audio id="backgroundMusic" src="assets/audio/background.wav" preload="none" loop></audio>
+        <header class="play-header"><div class="brand-mark">$</div><div class="brand-copy"><span class="brand-kicker">BUILD YOUR FORTUNE</span><h1>ClickTheCash</h1></div><div class="music-controls" role="group" aria-label="Background music"><span class="music-label">MUSIC</span><button id="musicMute" type="button" aria-label="Mute background music" aria-pressed="false">ON</button><input id="musicVolume" type="range" min="0" max="100" value="30" aria-label="Music volume"><span id="musicVolumeValue" class="music-volume-value">30%</span></div></header><audio id="backgroundMusic" src="assets/audio/background.wav" preload="none" loop></audio>
         <div class="balance-card"><span class="eyebrow">YOUR CASH</span><div id="balance" class="balance">$0</div><div class="income-line"><span id="rate">$0 / second</span><span class="income-divider">•</span><span id="perClick">$1 / click</span></div></div>
         <div id="pileZone" class="pile-zone">
           <div id="particleLayer" class="particle-layer" aria-hidden="true"></div>
           <div class="wealth-backdrop" aria-hidden="true"></div>
           <button id="moneyPile" class="money-pile wealth-0" type="button" aria-label="Collect cash from the wealth pile"></button>
           <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
-          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>$</span><small>GOLDEN BILL</small></button>
+          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><span>$</span><small>GOLDEN BILL</small><b id="goldenCountdown" class="event-countdown">12</b></button><button id="boosterDrop" class="booster-drop" type="button" hidden aria-label="Claim Booster Drop"><span>◆</span><small>BOOSTER DROP</small><b id="dropCountdown" class="event-countdown">20</b></button><div id="burstLayer" class="burst-layer" aria-hidden="true"></div>
         </div>
         <div id="buffBar" class="buff-bar" aria-live="polite"></div>
         <div class="play-footer"><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">$0</strong></div>
@@ -33,6 +33,7 @@
           <button class="tab" data-tab="stats" type="button">STATS</button>
           <button class="tab" data-tab="achievements" type="button">ACHIEVEMENTS</button>
           <button class="tab" data-tab="prestige" type="button">REBIRTH</button>
+          <button class="tab" data-tab="boosters" type="button">BOOSTERS</button>
           <button class="tab" data-feature="leaderboard" type="button">LEADERBOARD</button>
           <button class="tab" data-feature="store" type="button">STORE</button>
         </nav>
@@ -53,9 +54,10 @@
         </div>
         <div id="tab-prestige" class="tab-panel" hidden>
           <div class="section-heading"><div><span class="eyebrow">START AGAIN. GO FURTHER.</span><h2>Rebirth</h2></div></div>
-          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each Empire Point adds 1% to all income. Rebirth to keep your advantage forever.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
-          <h3 class="tree-title">Empire investments</h3><div id="prestigeTree" class="prestige-tree"></div>
+          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each Rebirth adds 10% to all earnings. Empire Points also permanently boost income and buy investments.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
+          <h3 class="tree-title">Early investments · 1–10 points</h3><div id="earlyPrestigeTree" class="prestige-tree"></div><h3 class="tree-title">Advanced investments</h3><div id="prestigeTree" class="prestige-tree"></div>
         </div>
+        <div id="tab-boosters" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">RARE FINDS</span><h2>Boosters</h2></div></div><p class="section-intro">Drops can appear while you actively play. Equip one copy of each booster.</p><h3 class="tree-title">Equipment · 6 slots</h3><div id="boosterSlots" class="booster-slots"></div><h3 class="tree-title">Inventory</h3><div id="boosterInventory" class="booster-inventory"></div></div>
         </div>
         <section class="owned-panel world-panel" aria-label="Owned generator world">
           <div class="owned-heading"><div><span class="eyebrow">THE ENGINE OF YOUR EMPIRE</span><h2>Your business world</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>
@@ -73,6 +75,6 @@
   <div id="featureBackdrop" class="modal-backdrop" hidden><section id="featureModal" class="feature-modal" role="dialog" aria-modal="true" aria-labelledby="featureTitle"><button id="featureClose" class="modal-close" type="button" aria-label="Close">×</button><div id="featureBody"></div></section></div>
   <div id="businessTooltip" class="business-tooltip" role="tooltip" hidden></div>
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
-  <div id="modalBackdrop" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button id="modalClose" class="modal-close" type="button" aria-label="Close">×</button><span class="eyebrow">CASH EMPIRE</span><h2 id="modalTitle"></h2><div id="modalBody"></div><div id="modalActions" class="modal-actions"></div></div></div>
+  <div id="modalBackdrop" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button id="modalClose" class="modal-close" type="button" aria-label="Close">×</button><span class="eyebrow">ClickTheCash</span><h2 id="modalTitle"></h2><div id="modalBody"></div><div id="modalActions" class="modal-actions"></div></div></div>
 </body>
 </html>

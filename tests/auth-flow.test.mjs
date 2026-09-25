@@ -32,6 +32,7 @@ test("Google callback creates a stable account, username is unique, and sign out
   const database=new DatabaseSync(":memory:");
   database.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  database.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
   const jwk={...await crypto.subtle.exportKey("jwk",keys.publicKey),kid:"test-key",use:"sig"};
   const env={DB:d1(database),SESSION_SECRET:"a-secret-long-enough-for-tests",GOOGLE_CLIENT_ID:"client-test",GOOGLE_CLIENT_SECRET:"secret-test",PUBLIC_SITE_URL:origin};
@@ -74,6 +75,16 @@ test("Google callback creates a stable account, username is unique, and sign out
     const snapshot=await worker.fetch(new Request(origin+"/api/progress/snapshot",{headers:{Cookie:cookie}}),env);
     assert.equal((await snapshot.json()).balance,0);
     const action=(body,actionId=crypto.randomUUID())=>worker.fetch(new Request(origin+"/api/progress/action",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({actionId,...body})}),env);
+    const heartbeat=active=>worker.fetch(new Request(origin+"/api/progress/heartbeat",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({active})}),env);
+    assert.equal((await heartbeat(true)).status,200);
+    database.prepare("UPDATE progress SET last_heartbeat_ms=? WHERE user_id=?").run(Date.now()-30000,userId);
+    const activeTime=await (await heartbeat(true)).json();
+    assert.ok(activeTime.totalPlaytime>=29&&activeTime.totalPlaytime<=35);
+    await heartbeat(false);
+    database.prepare("UPDATE progress SET pending_drop_until_ms=? WHERE user_id=?").run(Date.now()+20000,userId);
+    const drop=await (await action({type:"claim_booster_drop"})).json();
+    assert.equal(Object.values(drop.boosterInventory).reduce((a,b)=>a+b,0),1);
+    const boosterId=Object.keys(drop.boosterInventory)[0];
     const clickId=crypto.randomUUID();
     const firstClick=await action({type:"click_batch",count:1},clickId);
     assert.equal((await firstClick.json()).balance,1);
@@ -89,6 +100,8 @@ test("Google callback creates a stable account, username is unique, and sign out
     const repeatedPurchase=await action({type:"buy_business",businessId:"collector",quantity:1},purchaseId);
     assert.equal(repeatedPurchase.status,200);
     assert.equal((await repeatedPurchase.json()).businesses.collector,1);
+    const equipped=await (await action({type:"equip_booster",slot:1,boosterId})).json();
+    assert.equal(equipped.equippedBoosters[0],boosterId);
     const signedOut=await worker.fetch(new Request(origin+"/api/auth/signout",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:"{}"}),env);
     assert.equal(signedOut.status,200);
     const afterSignout=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:cookie}}),env);
@@ -97,6 +110,10 @@ test("Google callback creates a stable account, username is unique, and sign out
     const returning=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:again}}),env);
     assert.deepEqual(await returning.json(),{authenticated:true,username:"CashKing92",needsUsername:false});
     assert.equal(database.prepare("SELECT id FROM users WHERE google_subject=?").get(subject).id,userId);
+    const resumed=await (await worker.fetch(new Request(origin+"/api/progress/snapshot",{headers:{Cookie:again}}),env)).json();
+    assert.ok(resumed.totalPlaytime>=29);
+    assert.equal(resumed.equippedBoosters[0],boosterId);
+    assert.equal(resumed.boosterInventory[boosterId],1);
     subject="google-subject-two";
     const secondCookie=await login();
     const duplicate=await worker.fetch(new Request(origin+"/api/username/check",{method:"POST",headers:{Cookie:secondCookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"cashking92"})}),env);
@@ -109,10 +126,11 @@ test("Google callback creates a stable account, username is unique, and sign out
   }finally{globalThis.fetch=originalFetch;database.close();}
 });
 
-test("leaderboard is public, ordered, limited to 100, and returns an outside player's rank",async()=>{
+test("leaderboard is public, ordered, limited to 30, and returns an outside player's rank",async()=>{
   const db=new DatabaseSync(":memory:");
   db.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   const now=Date.now();
   const user=db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES(?,?,?,?,1)");
   const score=db.prepare("INSERT INTO progress(user_id,last_accrual_ms,lifetime_cash,rebirths) VALUES(?,?,?,?)");
@@ -128,7 +146,7 @@ test("leaderboard is public, ordered, limited to 100, and returns an outside pla
   const env={DB:d1(db)};
   const publicResult=await worker.fetch(new Request(origin+"/api/leaderboard"),env);
   const publicData=await publicResult.json();
-  assert.equal(publicData.players.length,100);
+  assert.equal(publicData.players.length,30);
   assert.equal(publicData.players[0].username,"Player_2");
   assert.equal(publicData.players[1].username,"Player_1");
   assert.equal(publicData.authenticated,false);

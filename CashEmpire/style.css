@@ -507,3 +507,78 @@ h1,h2,h3,p{margin-top:0}
   .buy-options{width:100%;gap:3px}
   .buy-option{flex:1 1 0;min-width:0;padding:6px 3px}
 }
+
+/* Top 30 stays in its own scrollport, with a visible header. */
+.feature-modal.leaderboard-view{height:min(640px,92dvh)}
+.leaderboard-view .feature-body{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.leaderboard-view .leaderboard-list{height:auto;max-height:none;min-height:0;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain}
+.leaderboard-view .leaderboard-row{min-height:42px}
+.leaderboard-view .leaderboard-head{display:grid;position:sticky;top:0;z-index:3}
+.leaderboard-view .personal-rank{flex:none}
+@media(max-width:600px){
+  .leaderboard-view .feature-body{padding:14px 10px}
+  .leaderboard-view .leaderboard-row{display:grid;grid-template-columns:30px minmax(65px,1fr) minmax(72px,.85fr) 50px;gap:4px;padding:6px 5px;min-height:39px;font-size:10px}
+  .leaderboard-view .leaderboard-row .rank,.leaderboard-view .leaderboard-row .rebirths{grid-row:auto;grid-column:auto;text-align:initial}
+  .leaderboard-view .leaderboard-row .cash,.leaderboard-view .leaderboard-row .rebirths{text-align:right}
+  .leaderboard-view .leaderboard-head{font-size:8px}
+}
+.event-countdown{position:absolute;top:-22px;left:50%;transform:translateX(-50%);min-width:28px;padding:2px 5px;border-radius:8px;background:#173629;color:#fff3c2;font-size:12px;font-variant-numeric:tabular-nums}
+.booster-drop{position:absolute;z-index:8;width:88px;height:68px;border:2px solid #9fd9ff;border-radius:12px;background:linear-gradient(140deg,#245378,#1a334f);color:#d4f5ff;box-shadow:0 0 14px #71ceff88;transform:rotate(8deg);animation:billPulse 1.2s ease-in-out infinite alternate}
+.booster-drop span{display:block;font-size:30px;line-height:30px}.booster-drop small{font-size:8px;font-weight:850}
+.burst-layer{position:absolute;inset:0;pointer-events:none;z-index:9;overflow:hidden}
+.gold-spark{position:absolute;width:7px;height:7px;border-radius:50%;background:#ffe686;box-shadow:0 0 5px #ffca57;animation:goldBurst .7s ease-out forwards}
+@keyframes goldBurst{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
+.gold-rush{--gold:#ffd679;--green:#ffdb91;--line:#9c7537}
+.gold-rush .upgrade-card,.gold-rush .investment-card,.gold-rush .business-card,.gold-rush .owned-row{border-color:#e5b755}
+.gold-rush .upgrade-card button,.gold-rush .investment-card button,.gold-rush .business-card button{background:#ffd679}
+.gold-rush .tab.active{border-bottom-color:#ffe392}
+.play-column,.content-column,.store-column,.business-card,.upgrade-card,.investment-card{transition:background-color .35s,border-color .35s,color .35s}
+.booster-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 14px}
+.booster-slot{display:flex;align-items:center;gap:6px;min-height:48px;padding:7px;border:1px solid #68885e;border-radius:9px;background:#244735;font-size:11px}
+.booster-slot strong{color:var(--gold);white-space:nowrap}.booster-slot span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.booster-slot.locked{opacity:.72}.booster-slot button,.booster-card button{border:0;border-radius:6px;padding:7px 9px;background:var(--gold);color:#1a3524;font-size:10px;font-weight:800}
+.booster-inventory{display:grid;gap:7px;padding-bottom:12px}
+.booster-card{display:flex;align-items:center;gap:9px;padding:8px;border:1px solid #68885e;border-left:4px solid #b5b7a2;border-radius:9px;background:#244735}
+.booster-card.rare{border-left-color:#5faad9}.booster-card.epic{border-left-color:#b88ae8}.booster-card.legendary{border-left-color:#f2c15a}.booster-card.mythic{border-left-color:#fc8ec6}
+.booster-card.locked{opacity:.55}.booster-art{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:7px;background:linear-gradient(145deg,#e8c57a,#785d31);color:#173525;font-size:22px}
+.booster-info{flex:1;min-width:0}.booster-info strong{display:block;font-size:12px}.booster-info small{color:var(--gold);font-size:9px;letter-spacing:.09em}.booster-info p{margin:2px 0 0;color:var(--muted);font-size:10px}
+.game-shell .money-pile,.game-shell .balance,.game-shell .float-cash,.game-shell button,.game-shell .tab,.game-shell .business-card{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.game-shell input,.game-shell textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+@media(max-width:600px){
+  .market-ticker{height:52px;min-height:52px}
+  .fit-screen-toggle,.account-controls>a,.account-controls>button,.music-controls button,.buy-option,.business-card button,.setting,.save-actions button{min-height:44px;font-size:clamp(12px,3vw,15px)}
+  .progress-area .tabs{min-height:48px;height:48px}
+  .progress-area .tab{min-height:44px;font-size:clamp(11px,2.8vw,13px)}
+  .business-card{min-height:72px}.business-info strong{font-size:clamp(12px,3.3vw,15px)}
+  .business-info p,.owned-row-title small{font-size:clamp(11px,2.8vw,13px)}
+  .music-controls input{width:clamp(52px,15vw,78px);height:36px}
+  .music-volume-value{font-size:11px}
+  .balance{font-size:clamp(34px,9.3vw,52px)}
+  .income-line{font-size:clamp(12px,3vw,15px)}
+  .booster-slots{grid-template-columns:1fr}
+}
+/* Fit Screen scales one fixed dashboard, including all three columns, into the visual viewport. */
+html.fit-screen,html.fit-screen body{width:100%;height:100%;overflow:hidden!important;overscroll-behavior:none}
+html.fit-screen .game-shell{position:absolute;left:0;top:0;width:900px;height:700px;min-height:0;overflow:hidden;transform:scale(var(--fit-scale,1));transform-origin:top left}
+html.fit-screen .market-ticker{height:42px;min-height:42px;padding:0 12px}
+html.fit-screen .ticker-label{display:inline;font-size:9px}
+html.fit-screen .columns{display:grid;grid-template-columns:31% 35% 34%;height:632px;min-height:0}
+html.fit-screen .play-column,html.fit-screen .content-column,html.fit-screen .store-column{grid-column:auto;height:632px;min-height:0;max-height:none;overflow:hidden}
+html.fit-screen .play-column{padding:12px;display:flex}
+html.fit-screen .play-header{flex-wrap:wrap}
+html.fit-screen .play-header h1{font-size:16px}
+html.fit-screen .balance-card{padding:10px 0 3px}
+html.fit-screen .balance{font-size:35px}
+html.fit-screen .play-column .pile-zone{height:auto;min-height:0;flex:1}
+html.fit-screen .play-column .money-pile{width:min(92%,270px)}
+html.fit-screen .progress-area{height:278px;min-height:0;flex:none}
+html.fit-screen .progress-area .tabs{height:50px;min-height:50px;display:flex;flex-wrap:nowrap}
+html.fit-screen .progress-area .tab{min-height:48px;font-size:10px;padding:6px}
+html.fit-screen .progress-area .tab-panel{padding:10px}
+html.fit-screen .world-panel{height:auto;min-height:0;flex:1;padding:10px}
+html.fit-screen .world-panel .owned-business-list{overflow-y:auto}
+html.fit-screen .store-top{padding:12px}
+html.fit-screen .business-list{display:block;max-height:none;overflow-y:auto}
+html.fit-screen .business-card{min-height:61px;padding:6px}
+html.fit-screen .business-card button{min-height:38px;font-size:11px}
+html.fit-screen .site-footer{height:26px;min-height:26px;padding:5px}

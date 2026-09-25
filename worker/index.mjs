@@ -1,4 +1,5 @@
 import {readSession,handleAuthRequest} from "./auth.mjs";
+import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -27,7 +28,7 @@ const SPECIAL=[
   {id:"precisionTap",cost:50000000000,unlock:10000000000,mult:2,effect:"click"}
 ];
 const MILESTONES=[[10,2,4],[25,2,5],[50,2,6],[100,3,8],[200,4,10]];
-const PRESTIGE_COST={investor:5,compound:12,automation:20,lucky:25,executive:35,nightshift:50};
+const PRESTIGE_COST={...EARLY_PRESTIGE,investor:5,compound:12,automation:20,lucky:25,executive:35,nightshift:50};
 const capped=n=>Math.min(LIMIT,Math.max(0,n));
 function sanitizeUsername(input){
   if(typeof input!=="string")return null;
@@ -45,28 +46,53 @@ function loadProgress(row){
     userId:row.user_id,balance:capped(row.balance),lifetime:capped(row.lifetime_cash),
     runEarned:capped(row.run_earned),rebirths:row.rebirths,empirePoints:row.empire_points,
     empireSpent:row.empire_spent,totalClicks:row.total_clicks,
+    totalPlaytimeMs:Math.max(0,Number(row.playtime_ms)||0),lastHeartbeatMs:Math.max(0,Number(row.last_heartbeat_ms)||0),
+    boosterInventory:decodeJson(row.booster_inventory_json||"{}",{}),equipped:decodeJson(row.booster_equipped_json||"[]",[]),
+    slotsUnlocked:Math.max(1,Math.min(4,Number(row.booster_slots_unlocked)||1)),
+    nextDropPlaytimeMs:Math.max(DROP_INTERVAL_MS,Number(row.next_drop_playtime_ms)||DROP_INTERVAL_MS),
+    pendingDropUntilMs:Math.max(0,Number(row.pending_drop_until_ms)||0),rushUntilMs:Math.max(0,Number(row.rush_until_ms)||0),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
     version:row.version
   };
 }
-function totalCost(b,owned,count){
+function normalizeExtras(s){
+  s.totalPlaytimeMs=Math.max(0,Number(s.totalPlaytimeMs)||0);
+  s.lastHeartbeatMs=Math.max(0,Number(s.lastHeartbeatMs)||0);
+  s.nextDropPlaytimeMs=Math.max(DROP_INTERVAL_MS,Number(s.nextDropPlaytimeMs)||DROP_INTERVAL_MS);
+  s.pendingDropUntilMs=Math.max(0,Number(s.pendingDropUntilMs)||0);
+  s.rushUntilMs=Math.max(0,Number(s.rushUntilMs)||0);
+  s.slotsUnlocked=Math.max(1,Math.min(4,Number(s.slotsUnlocked)||1));
+  s.boosterInventory=s.boosterInventory&&typeof s.boosterInventory==="object"?s.boosterInventory:{};
+  s.equipped=Array.isArray(s.equipped)?s.equipped.slice(0,6):[];
+  s.premiumSlots=Array.isArray(s.premiumSlots)?s.premiumSlots:[];
+  return s;
+}
+function bonus(s,type){return boosterBonus(s,type);}
+function discount(s){return Math.max(.75,1-(s.prestige.includes("bulkBuyer")?.03:0)-bonus(s,"discount"));}
+function totalCost(b,owned,count,priceFactor=1){
   if(count<=0)return 0;
-  return b.cost*Math.pow(PRICE_GROWTH,owned)*Math.expm1(count*Math.log(PRICE_GROWTH))/(PRICE_GROWTH-1);
+  return b.cost*Math.pow(PRICE_GROWTH,owned)*Math.expm1(count*Math.log(PRICE_GROWTH))/(PRICE_GROWTH-1)*priceFactor;
 }
 function prestigeBonus(s){return 1+s.empirePoints*(s.prestige.includes("compound")?.015:.01);}
+function totalBonus(s){return (1+s.rebirths*.1)*prestigeBonus(s)*(s.prestige.includes("empireMomentum")?1.15:1)*(1+bonus(s,"total"));}
 function unitRate(s,b,entitled){
-  let rate=b.income*prestigeBonus(s)*(s.prestige.includes("investor")?1.1:1);
+  let rate=b.income*totalBonus(s)*(s.prestige.includes("investor")?1.1:1)*(s.prestige.includes("businessNetwork")?1.1:1)*(1+bonus(s,"business"));
   for(const [count,mult] of MILESTONES)if(s.upgrades.includes(b.id+"-"+count))rate*=mult;
   for(const upgrade of SPECIAL)if(s.upgrades.includes(upgrade.id)&&(upgrade.effect==="total"||upgrade.effect===b.id))rate*=upgrade.mult;
   return rate*(entitled?2:1);
 }
 function businessRate(s,entitled){return BUSINESS.reduce((sum,b)=>sum+(s.businesses[b.id]||0)*unitRate(s,b,entitled),0);}
 function clickRate(s,entitled){
-  let value=prestigeBonus(s)*(s.prestige.includes("executive")?2:1);
+  let value=totalBonus(s)*(s.prestige.includes("executive")?2:1)*(s.prestige.includes("clickTraining")?1.1:1)*(1+bonus(s,"click"));
   for(const upgrade of CLICK_UPGRADES)if(s.upgrades.includes(upgrade.id))value*=upgrade.mult;
   for(const upgrade of SPECIAL)if(upgrade.effect==="click"&&s.upgrades.includes(upgrade.id))value*=upgrade.mult;
   return value*(entitled?2:1);
+}
+function rebirthPoints(s){
+  if(s.runEarned<1000000)return 0;
+  const multiplier=1+(s.prestige.includes("rebirthMastery")?.15:0)+bonus(s,"rebirthPoints");
+  return Math.floor(Math.sqrt(s.runEarned/1000000)*multiplier);
 }
 function award(s,amount){
   if(!Number.isFinite(amount)||amount<0)throw Error("Invalid production.");
@@ -76,10 +102,25 @@ function award(s,amount){
 }
 function advance(s,now,entitled){
   const cap=s.prestige.includes("nightshift")?16*3600:10*3600;
-  const elapsed=Math.min(cap,Math.max(0,(now-s.lastAccrualMs)/1000));
-  const efficiency=elapsed>60?.5:1;
-  award(s,businessRate(s,entitled)*elapsed*efficiency);
+  const start=s.lastAccrualMs;
+  const elapsed=Math.min(cap,Math.max(0,(now-start)/1000));
+  const offline=elapsed>60;
+  const efficiency=offline?(s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")):1;
+  const rushSeconds=!offline?Math.max(0,Math.min(now,s.rushUntilMs)-start)/1000:0;
+  award(s,businessRate(s,entitled)*(elapsed+6*rushSeconds)*efficiency);
   s.lastAccrualMs=now;
+}
+function heartbeatState(s,now,active,random=Math.random){
+  normalizeExtras(s);
+  if(!active){s.lastHeartbeatMs=0;return;}
+  const elapsed=now-s.lastHeartbeatMs;
+  if(s.lastHeartbeatMs&&elapsed>0&&elapsed<=45000)s.totalPlaytimeMs+=Math.min(elapsed,35000);
+  s.lastHeartbeatMs=now;
+  if(s.pendingDropUntilMs&&now>=s.pendingDropUntilMs)s.pendingDropUntilMs=0;
+  if(s.totalPlaytimeMs>=s.nextDropPlaytimeMs){
+    s.nextDropPlaytimeMs+=DROP_INTERVAL_MS;
+    if(!s.pendingDropUntilMs&&random()<.08)s.pendingDropUntilMs=now+20000;
+  }
 }
 function upgradeFor(s,id){
   const click=CLICK_UPGRADES.find(u=>u.id===id);
@@ -95,22 +136,31 @@ function upgradeFor(s,id){
   return null;
 }
 const CLICK_BATCH_TECHNICAL_MAX=1000;
-function applyAction(current,action,now,entitled){
-  const s=structuredClone(current);
+function applyAction(current,action,now,entitled,random=Math.random){
+  const s=normalizeExtras(structuredClone(current));
   advance(s,now,entitled);
   if(action.type==="click_batch"){
     const count=action.count;
     if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_TECHNICAL_MAX)
       throw Error("Invalid click batch.");
-    award(s,clickRate(s,entitled)*count);s.totalClicks+=count;
+    award(s,clickRate(s,entitled)*count*(s.rushUntilMs>now?7:1));s.totalClicks+=count;
   }else if(action.type==="golden"){
-    if(now-s.lastGoldenMs<180000)throw Error("Golden Bill is not ready.");
-    award(s,Math.max(100,businessRate(s,entitled)*180,clickRate(s,entitled)*50));s.lastGoldenMs=now;
+    const frequency=1+(s.prestige.includes("goldenRadar")?.1:0)+(s.prestige.includes("lucky")?.3:0)+bonus(s,"goldenFrequency");
+    if(now-s.lastGoldenMs<180000/frequency)throw Error("Golden Bill is not ready.");
+    s.lastGoldenMs=now;
+    if(random()<.35){
+      s.rushUntilMs=now+30000;s.event={type:"goldRush",until:s.rushUntilMs};
+    }else{
+      const base=Math.max(500,businessRate(s,entitled)*180,clickRate(s,entitled)*100);
+      const multiplier=.8+random()*.6;
+      const amount=base*multiplier*(1+(s.prestige.includes("goldenReserve")?.25:0)+bonus(s,"goldenCash"));
+      award(s,amount);s.event={type:"goldenCash",amount};
+    }
   }else if(action.type==="buy_business"){
     const b=BUSINESS.find(x=>x.id===action.businessId);
     const quantity=action.quantity;
     if(!b||!Number.isInteger(quantity)||quantity<1||quantity>100)throw Error("Invalid business purchase.");
-    const price=totalCost(b,s.businesses[b.id],quantity);
+    const price=totalCost(b,s.businesses[b.id],quantity,discount(s));
     if(!Number.isFinite(price)||price>s.balance*(1+1e-12))throw Error("Not enough cash.");
     s.balance=capped(s.balance-price);s.businesses[b.id]+=quantity;
   }else if(action.type==="buy_upgrade"){
@@ -121,11 +171,32 @@ function applyAction(current,action,now,entitled){
     const cost=PRESTIGE_COST[action.upgradeId];
     if(!cost||s.prestige.includes(action.upgradeId)||cost>s.empirePoints-s.empireSpent)throw Error("Investment unavailable.");
     s.empireSpent+=cost;s.prestige.push(action.upgradeId);
+  }else if(action.type==="unlock_slot"){
+    const next=s.slotsUnlocked+1;
+    if(next>4||action.slot!==next||SLOT_PRICES[next]>s.balance)throw Error("Booster slot unavailable.");
+    s.balance=capped(s.balance-SLOT_PRICES[next]);s.slotsUnlocked=next;
+  }else if(action.type==="equip_booster"){
+    const id=action.boosterId,slot=action.slot;
+    if(!BOOSTERS.some(b=>b.id===id)||!Number.isInteger(slot)||slot<1||slot>6||
+      !(slot<=s.slotsUnlocked||s.premiumSlots.includes(slot))||!(s.boosterInventory[id]>0)||s.equipped.includes(id))
+      throw Error("Booster cannot be equipped.");
+    s.equipped[slot-1]=id;
+  }else if(action.type==="unequip_booster"){
+    const slot=action.slot;
+    if(!Number.isInteger(slot)||slot<1||slot>6||!s.equipped[slot-1])throw Error("Slot is empty.");
+    s.equipped[slot-1]=null;
+  }else if(action.type==="claim_booster_drop"){
+    if(!s.pendingDropUntilMs||now>s.pendingDropUntilMs)throw Error("Booster Drop has expired.");
+    const booster=rollBooster(random);
+    s.boosterInventory[booster.id]=Math.min(1000000,(Number(s.boosterInventory[booster.id])||0)+1);
+    s.pendingDropUntilMs=0;s.event={type:"boosterDrop",boosterId:booster.id,rarity:booster.rarity};
   }else if(action.type==="rebirth"){
-    const gain=Math.max(0,Math.floor(Math.sqrt(s.runEarned/10000000))-s.empirePoints);
+    const gain=rebirthPoints(s);
     if(gain<1)throw Error("Rebirth unavailable.");
-    s.empirePoints+=gain;s.rebirths++;s.balance=0;s.runEarned=0;s.upgrades=[];
+    s.empirePoints+=gain;s.rebirths++;s.balance=s.prestige.includes("starterCapital")?250:0;
+    s.runEarned=0;s.upgrades=[];s.rushUntilMs=0;
     s.businesses=Object.fromEntries(BUSINESS.map(b=>[b.id,0]));
+    if(s.prestige.includes("quickCollectors"))s.businesses.collector=5;
     if(s.prestige.includes("automation")){s.businesses.collector=10;s.businesses.lemonade=5;}
   }else throw Error("Unknown progress action.");
   if(!Number.isFinite(s.balance)||!Number.isFinite(s.lifetime))throw Error("Invalid progress.");
@@ -184,7 +255,7 @@ async function ensureProgress(env,userId,now){
 }
 const scoreSql=`WITH scores AS (
   SELECT u.id,u.username,p.rebirths,
-    MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)*CASE WHEN ?-p.last_accrual_ms>60000 THEN 0.5 ELSE 1 END) AS lifetime_cash
+    MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)*CASE WHEN ?-p.last_accrual_ms>60000 THEN p.offline_efficiency ELSE 1 END) AS lifetime_cash
   FROM progress p JOIN users u ON u.id=p.user_id WHERE u.username_set=1
 ), ranked AS (
   SELECT id,username,rebirths,lifetime_cash,
@@ -197,7 +268,7 @@ function leaderboardEntry(row,userId){
 async function getLeaderboard(request,env,user){
   await rateLimit(env,request,"leaderboard:"+(user?.id||"guest"),120);
   const now=Date.now();
-  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=100 ORDER BY rank").bind(now,now).all();
+  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=30 ORDER BY rank").bind(now,now).all();
   const players=(top.results||[]).map(row=>leaderboardEntry(row,user?.id));
   let me=players.find(row=>row.isSelf)||null;
   if(user?.username_set&&!me){
@@ -207,25 +278,40 @@ async function getLeaderboard(request,env,user){
   return json({players,me,authenticated:Boolean(user)});
 }
 function progressSummary(s,entitled){
-  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,ratePerSecond:businessRate(s,entitled),empirePoints:s.empirePoints,empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs};
+  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,
+    ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?7:1),empirePoints:s.empirePoints,
+    empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
+    prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
+    boosterInventory:s.boosterInventory,equippedBoosters:s.equipped,boosterSlotsUnlocked:s.slotsUnlocked,
+    premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
+    rushUntilMs:s.rushUntilMs,event:s.event||null};
 }
 function updateStatement(env,s,oldVersion,entitled){
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
   return env.DB.prepare(`UPDATE progress SET balance=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
     total_clicks=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
-    businesses_json=?,upgrades_json=?,prestige_json=?,version=version+1
-    WHERE user_id=? AND version=?`).bind(
+    businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
+    booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
+    pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
-      JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),s.userId,oldVersion
+      JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),
+      s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
+      s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
+      (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),s.userId,oldVersion
     );
+}
+async function premiumSlots(env,userId){
+  const rows=await env.DB.prepare("SELECT slot_number FROM booster_slot_entitlements WHERE user_id=?").bind(userId).all();
+  return (rows.results||[]).map(row=>Number(row.slot_number)).filter(slot=>slot===5||slot===6);
 }
 async function getProgress(env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   const entitled=await hasDoubleMoney(env,user.id);
   for(let attempt=0;attempt<3;attempt++){
     const row=await ensureProgress(env,user.id,Date.now());
-    const s=loadProgress(row),version=s.version;
+    const s=normalizeExtras(loadProgress(row)),version=s.version;
+    s.premiumSlots=await premiumSlots(env,user.id);
     advance(s,Date.now(),entitled);
     const updated=await updateStatement(env,s,version,entitled).run();
     if(updated.meta?.changes===1)return json(progressSummary(s,entitled));
@@ -235,12 +321,12 @@ async function getProgress(env,user){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count"]);
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId"]);
   if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
-  const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
-  if(!allowed[action.type]||Object.keys(action).some(key=>!allowed[action.type].includes(key)))fail(400,"Invalid action.");
+  const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"],unlock_slot:["actionId","type","slot"],equip_booster:["actionId","type","slot","boosterId"],unequip_booster:["actionId","type","slot"],claim_booster_drop:["actionId","type"]};
+  if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key)))fail(400,"Invalid action.");
   const bucket=action.type==="click_batch"?"progress-click:"+user.id:
-    action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"?"progress-purchase:"+user.id:
+    action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"||action.type==="unlock_slot"?"progress-purchase:"+user.id:
     "progress-special:"+user.id;
   await rateLimit(env,request,"progress-all:"+user.id,10000);
   await rateLimit(env,request,bucket,action.type==="click_batch"?6000:bucket.startsWith("progress-purchase:")?300:60);
@@ -250,7 +336,8 @@ async function postProgress(request,env,user){
     return getProgress(env,user);
   }
   const entitled=await hasDoubleMoney(env,user.id);
-  const now=Date.now(),row=await ensureProgress(env,user.id,now),current=loadProgress(row);
+  const now=Date.now(),row=await ensureProgress(env,user.id,now),current=normalizeExtras(loadProgress(row));
+  current.premiumSlots=await premiumSlots(env,user.id);
   let next;
   try{next=applyAction(current,action,now,entitled);}catch(error){fail(400,error.message);}
   try {
@@ -266,6 +353,22 @@ async function postProgress(request,env,user){
     fail(409,"Duplicate or conflicting action.");
   }
   return json(progressSummary(next,entitled));
+}
+async function postHeartbeat(request,env,user){
+  if(!user||!user.username_set)fail(401,"Choose a username first.");
+  sameOrigin(request);
+  const body=await readBody(request,["active"]);
+  if(typeof body.active!=="boolean")fail(400,"Invalid heartbeat.");
+  await rateLimit(env,request,"heartbeat:"+user.id,120);
+  const entitled=await hasDoubleMoney(env,user.id);
+  for(let attempt=0;attempt<3;attempt++){
+    const now=Date.now(),row=await ensureProgress(env,user.id,now);
+    const s=normalizeExtras(loadProgress(row));s.premiumSlots=await premiumSlots(env,user.id);
+    advance(s,now,entitled);heartbeatState(s,now,body.active);
+    const updated=await updateStatement(env,s,s.version,entitled).run();
+    if(updated.meta?.changes===1)return json(progressSummary(s,entitled));
+  }
+  fail(409,"Progress changed. Retry.");
 }
 async function updateUsername(request,env,user){
   if(!user)fail(401,"Sign in required.");
@@ -355,9 +458,9 @@ async function stripeWebhook(request,env){
       env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(event.id,now),
       env.DB.prepare("UPDATE purchases SET status='paid',paid_at_ms=? WHERE id=?").bind(now,purchase.id),
       env.DB.prepare(`UPDATE progress SET
-        balance=MIN(1e300,balance+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
-        lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
-        run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*0.5),
+        balance=MIN(1e300,balance+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
+        lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
+        run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         last_accrual_ms=?,rate_per_second=MIN(1e300,rate_per_second*2),version=version+1
         WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL)`)
         .bind(now,now,now,now,purchase.user_id,purchase.user_id),
@@ -391,15 +494,16 @@ export default {
       if(url.pathname==="/api/progress"&&request.method==="POST")
         fail(400,"Client-supplied cash, lifetime cash and rebirth totals are not accepted. Send server-validated actions.");
       if(url.pathname==="/api/progress/action"&&request.method==="POST")return await postProgress(request,env,user);
+      if(url.pathname==="/api/progress/heartbeat"&&request.method==="POST")return await postHeartbeat(request,env,user);
       if(url.pathname==="/api/progress/snapshot"&&request.method==="GET")return await getProgress(env,user);
       if(url.pathname==="/api/profile/username"&&request.method==="POST")fail(410,"Use account username setup.");
       if(url.pathname==="/api/store/checkout"&&request.method==="POST")return await beginCheckout(request,env,user);
       return json({error:"Not found."},404);
     }catch(error){
       if(error instanceof ApiError)return json({error:error.message},error.status);
-      console.error("Cash Empire API error",error);
+      console.error("ClickTheCash API error",error);
       return json({error:"Service unavailable."},503);
     }
   }
 };
-export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,verifyStripeSignature,loadProgress};
+export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,rebirthPoints,heartbeatState,advance,discount,verifyStripeSignature,loadProgress};

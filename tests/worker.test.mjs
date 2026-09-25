@@ -4,6 +4,7 @@ import {readFileSync} from "node:fs";
 import {DatabaseSync} from "node:sqlite";
 import worker,{testing} from "../worker/index.mjs";
 import {validateUsername} from "../worker/auth.mjs";
+import {BOOSTERS,rollBooster} from "../worker/boosters.mjs";
 
 const businesses=Object.fromEntries(["collector","lemonade","newspaper","vending","shop","restaurant","supermarket","factory","bank","corporation","exchange","mega","global","moon","galactic","multiverse"].map(id=>[id,0]));
 const progress=(overrides={})=>({
@@ -79,13 +80,13 @@ test("autoclicker batches at the same instant remain valid around purchases",()=
 test("rebirth, golden reward, and entitlement use server-calculated values",()=>{
   const reborn=testing.applyAction(progress({runEarned:10000000}),{type:"rebirth"},100000,false);
   assert.equal(reborn.rebirths,1);
-  assert.equal(reborn.empirePoints,1);
+  assert.equal(reborn.empirePoints,3);
   assert.equal(reborn.balance,0);
   const premium=testing.applyAction(progress(),{type:"click_batch",count:1},100000,true);
   assert.equal(premium.balance,1002);
   assert.equal(testing.businessRate(progress({businesses:{...businesses,collector:10}}),true),2);
-  const gold=testing.applyAction(progress(),{type:"golden"},200000,false);
-  assert.equal(gold.balance,1100);
+  const gold=testing.applyAction(progress(),{type:"golden"},200000,false,()=>.5);
+  assert.equal(gold.balance,1550);
   assert.throws(()=>testing.applyAction(gold,{type:"golden"},201000,false));
 });
 
@@ -146,4 +147,76 @@ test("webhook signature rejects tampering",async()=>{
   const signature=[...bytes].map(byte=>byte.toString(16).padStart(2,"0")).join("");
   assert.equal(await testing.verifyStripeSignature(raw,"t="+timestamp+",v1="+signature,"whsec_test"),true);
   assert.equal(await testing.verifyStripeSignature(raw+"x","t="+timestamp+",v1="+signature,"whsec_test"),false);
+});
+
+test("Rebirth points are per-run, permanent multiplier is additive, and early investments survive",()=>{
+  for(const [earned,points] of [[999999,0],[1000000,1],[4000000,2],[9000000,3],[100000000,10]])
+    assert.equal(testing.rebirthPoints(progress({runEarned:earned,empirePoints:500})),points);
+  const old=progress({runEarned:1000000,rebirths:2,prestige:["starterCapital","quickCollectors","clickTraining","businessNetwork","bulkBuyer","investor"],empirePoints:30,empireSpent:28});
+  const next=testing.applyAction(old,{type:"rebirth"},100000,false);
+  assert.equal(next.rebirths,3);assert.equal(next.balance,250);assert.equal(next.businesses.collector,5);
+  assert.deepEqual(next.prestige,old.prestige);assert.equal(next.empirePoints,31);
+  assert.ok(testing.clickRate(next,false)>1.3);assert.ok(testing.businessRate(next,false)>0);
+  assert.equal(testing.discount(next),.97);
+});
+
+test("Golden Bill cash scales and Golden Rush lasts 30 seconds for clicks and production",()=>{
+  const base=progress({businesses:{...businesses,collector:100},balance:1000000,lifetime:1000000,runEarned:1000000});
+  const cash=testing.applyAction(base,{type:"golden"},200000,false,()=>.5);
+  assert.equal(cash.event.type,"goldenCash");assert.ok(cash.event.amount>=500);
+  const rush=testing.applyAction(base,{type:"golden"},200000,false,()=>.1);
+  assert.equal(rush.event.type,"goldRush");assert.equal(rush.rushUntilMs,230000);
+  const during=testing.applyAction(rush,{type:"click_batch",count:1},200001,false);
+  assert.ok(during.balance-rush.balance>=7);
+  const ended=testing.applyAction(rush,{type:"click_batch",count:1},230001,false);
+  assert.equal(ended.rushUntilMs,230000);assert.ok(ended.balance>rush.balance);
+});
+
+test("heartbeats count visible active time only and roll a drop after ten minutes",()=>{
+  const state=progress();
+  testing.heartbeatState(state,100000,true,()=>.9);
+  testing.heartbeatState(state,130000,true,()=>.9);
+  assert.equal(state.totalPlaytimeMs,30000);
+  testing.heartbeatState(state,130001,false,()=>.9);
+  testing.heartbeatState(state,800000,true,()=>.9);
+  assert.equal(state.totalPlaytimeMs,30000);
+  state.totalPlaytimeMs=590000;
+  testing.heartbeatState(state,830000,true,()=>0);
+  assert.equal(state.totalPlaytimeMs,620000);
+  assert.equal(state.pendingDropUntilMs,850000);
+  assert.equal(state.nextDropPlaytimeMs,1200000);
+});
+
+test("booster rarity, duplicates, equipment, discounts and Rebirth persistence are validated",()=>{
+  assert.equal(BOOSTERS.length,20);
+  for(const [roll,rarity] of [[0,"common"],[.55,"rare"],[.83,"epic"],[.95,"legendary"],[.99,"mythic"]])
+    assert.equal(rollBooster(()=>roll).rarity,rarity);
+  let state=progress({balance:1e12,lifetime:1e12,runEarned:1e12,pendingDropUntilMs:120000});
+  state=testing.applyAction(state,{type:"claim_booster_drop"},100000,false,()=>0);
+  assert.equal(state.boosterInventory.coinPurse,1);
+  state.pendingDropUntilMs=120000;
+  state=testing.applyAction(state,{type:"claim_booster_drop"},100000,false,()=>0);
+  assert.equal(state.boosterInventory.coinPurse,2);
+  state=testing.applyAction(state,{type:"equip_booster",slot:1,boosterId:"coinPurse"},100000,false);
+  assert.equal(state.equipped[0],"coinPurse");
+  assert.throws(()=>testing.applyAction(state,{type:"equip_booster",slot:2,boosterId:"coinPurse"},100000,false));
+  state=testing.applyAction(state,{type:"unlock_slot",slot:2},100000,false);
+  assert.equal(state.slotsUnlocked,2);
+  assert.throws(()=>testing.applyAction(state,{type:"equip_booster",slot:3,boosterId:"fastHands"},100000,false));
+  const reborn=testing.applyAction(state,{type:"rebirth"},100000,false);
+  assert.equal(reborn.boosterInventory.coinPurse,2);assert.equal(reborn.equipped[0],"coinPurse");assert.equal(reborn.slotsUnlocked,2);
+  assert.throws(()=>testing.applyAction(reborn,{type:"claim_booster_drop"},130000,false));
+});
+
+test("additive migration retains an existing account and progress",()=>{
+  const db=new DatabaseSync(":memory:");
+  db.exec(readFileSync(new URL("../migrations/0001_leaderboard_store.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
+  db.prepare("INSERT INTO users(id,username,created_at_ms) VALUES('old','OldPlayer',1)").run();
+  db.prepare("INSERT INTO progress(user_id,balance,lifetime_cash,last_accrual_ms) VALUES('old',1234,5678,1)").run();
+  db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
+  const row=db.prepare("SELECT * FROM progress WHERE user_id='old'").get();
+  assert.equal(row.balance,1234);assert.equal(row.lifetime_cash,5678);
+  assert.equal(row.playtime_ms,0);assert.equal(row.booster_slots_unlocked,1);
+  db.close();
 });

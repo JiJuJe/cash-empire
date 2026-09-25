@@ -44,7 +44,43 @@
   const MILESTONES = [
     {count:10,mult:2},{count:25,mult:2},{count:50,mult:2},{count:100,mult:3},{count:200,mult:4}
   ];
-  const PRESTIGE = [
+  const EARLY_PRESTIGE=[
+    ["starterCapital","Starter Capital",1,"Start every Rebirth with $250."],
+    ["quickCollectors","Quick Collectors",2,"Start every Rebirth with 5 Cash Collectors."],
+    ["clickTraining","Click Training",3,"Permanent +10% click income."],
+    ["businessNetwork","Business Network",4,"Permanent +10% business income."],
+    ["goldenRadar","Golden Radar",5,"Golden Bills appear 10% more often."],
+    ["offlineOffice","Offline Office",6,"Offline efficiency increases to 60%."],
+    ["bulkBuyer","Bulk Buyer",7,"Businesses cost 3% less."],
+    ["empireMomentum","Empire Momentum",8,"Permanent +15% total earnings."],
+    ["goldenReserve","Golden Reserve",9,"Golden Bill cash rewards +25%."],
+    ["rebirthMastery","Rebirth Mastery",10,"Future Rebirths give +15% Empire Points."]
+  ].map(([id,name,cost,description])=>({id,name,cost,description,icon:"✦",early:true}));
+  const BOOSTERS=[
+    ["coinPurse","Coin Purse","common","total",.04,"+4% total earnings"],
+    ["fastHands","Fast Hands","common","click",.10,"+10% click earnings"],
+    ["smallSponsor","Small Sponsor","common","business",.08,"+8% business earnings"],
+    ["nightOwl","Night Owl","common","offline",.12,"+12% offline earnings"],
+    ["dealHunter","Deal Hunter","common","discount",.02,"Businesses cost 2% less"],
+    ["luckyCoin","Lucky Coin","common","goldenCash",.15,"Golden Bill cash rewards +15%"],
+    ["richInvestor","Rich Investor","rare","total",.15,"+15% total earnings"],
+    ["bigSponsor","Big Sponsor","rare","business",.20,"+20% business earnings"],
+    ["clickPro","Click Pro","rare","click",.30,"+30% click earnings"],
+    ["goldenScout","Golden Scout","rare","goldenFrequency",.20,"Golden Bills appear 20% more often"],
+    ["smartManager","Smart Manager","rare","discount",.04,"Businesses cost 4% less"],
+    ["ventureCapitalist","Venture Capitalist","epic","total",.25,"+25% total earnings"],
+    ["marketGenius","Market Genius","epic","business",.35,"+35% business earnings"],
+    ["rebirthStrategist","Rebirth Strategist","epic","rebirthPoints",.20,"+20% Empire Points from Rebirth"],
+    ["goldenTouch","Golden Touch","epic","goldenCash",.35,"Golden Bill cash rewards +35%"],
+    ["billionaireMentor","Billionaire Mentor","legendary","total",.40,"+40% total earnings"],
+    ["empireArchitect","Empire Architect","legendary","business",.55,"+55% business earnings"],
+    ["goldenEmperor","Golden Emperor","legendary","goldenCash",.70,"Golden Bill cash rewards +70%"],
+    ["moneyKing","Money King","mythic","total",.60,"+60% total earnings"],
+    ["infiniteSponsor","Infinite Sponsor","mythic","business",.75,"+75% business earnings"]
+  ].map(([id,name,rarity,effect,value,description])=>({id,name,rarity,effect,value,description}));
+  const SLOT_PRICES={2:10000000,3:1000000000,4:100000000000};
+  const DROP_INTERVAL_MS=600000;
+  const PRESTIGE = [...EARLY_PRESTIGE,
     {id:"investor",name:"Investor",icon:"📊",cost:5,description:"Businesses produce +10%."},
     {id:"compound",name:"Compound Interest",image:"assets/upgrade-compound-interest.png",cost:12,description:"Each Empire Point gives +1.5% instead of +1%."},
     {id:"automation",name:"Automation",image:"assets/upgrade-automation.png",cost:20,description:"Start each rebirth with 10 Cash Collectors and 5 Lemonade Stands."},
@@ -63,6 +99,8 @@
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
+    boosterInventory:{},equippedBoosters:[],boosterSlotsUnlocked:1,premiumBoosterSlots:[],
+    nextDropPlaytimeMs:DROP_INTERVAL_MS,pendingDropUntilMs:0,rushUntilMs:0,
     settings:{sound:true,animations:true,particles:true,compact:false,light:false,fitScreen:false}
   });
   let state = defaultState();
@@ -75,8 +113,8 @@
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
-  let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
-  let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
+  let buyAmount = "1",activeTab = "upgrades",sessionActiveSeconds=0,lastTick = Date.now(),lastHeartbeatSent=0,heartbeatBusy=false;
+  let goldenExpires = 0,goldenNext = Date.now() + 250000,buff = null;
   let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
   let musicMuted = false, musicVolume = 30, musicStarted = false;
   const businessRows=new Map();
@@ -101,10 +139,18 @@
     const h = Math.floor(seconds/3600),m = Math.floor(seconds%3600/60),s = seconds%60;
     return h ? h+"h "+m+"m" : m ? m+"m "+s+"s" : s+"s";
   }
+  function boosterBonus(effect) {
+    return state.equippedBoosters.reduce((sum,id)=>{
+      const b=BOOSTERS.find(item=>item.id===id);
+      return sum+(b?.effect===effect&&state.boosterInventory[id]>0?b.value:0);
+    },0);
+  }
+  function totalMultiplier(){return (1+state.rebirths*.1)*prestigeBonus()*(hasPrestige("empireMomentum")?1.15:1)*(1+boosterBonus("total"));}
+  function priceFactor(){return Math.max(.75,1-(hasPrestige("bulkBuyer")?.03:0)-boosterBonus("discount"));}
   function totalCost(b,owned,quantity) {
     if (quantity <= 0) return 0;
     const start = b.cost * Math.pow(PRICE_GROWTH,owned);
-    return start * Math.expm1(quantity * Math.log(PRICE_GROWTH)) / (PRICE_GROWTH-1);
+    return start * Math.expm1(quantity * Math.log(PRICE_GROWTH)) / (PRICE_GROWTH-1)*priceFactor();
   }
   function maxAffordable(b,owned,budget) {
     if (budget < totalCost(b,owned,1)) return 0;
@@ -132,7 +178,7 @@
     return MILESTONES.reduce((value,m) => value * (has(b.id+"-"+m.count) ? m.mult : 1),1);
   }
   function businessUnitRate(b) {
-    let rate=b.income*businessMultiplier(b)*prestigeBonus()*(hasPrestige("investor")?1.1:1);
+    let rate=b.income*businessMultiplier(b)*totalMultiplier()*(hasPrestige("investor")?1.1:1)*(hasPrestige("businessNetwork")?1.1:1)*(1+boosterBonus("business"));
     for(const u of SPECIAL_UPGRADES)if(has(u.id)&&(u.effect==="total"||u.effect===b.id))rate*=u.mult;
     return rate * premiumMultiplier;
   }
@@ -146,7 +192,7 @@
     let value=1;
     for(const u of CLICK_UPGRADES)if(has(u.id))value*=u.mult;
     for(const u of SPECIAL_UPGRADES)if(u.effect==="click"&&has(u.id))value*=u.mult;
-    value*=prestigeBonus()*(hasPrestige("executive")?2:1);
+    value*=totalMultiplier()*(hasPrestige("executive")?2:1)*(hasPrestige("clickTraining")?1.1:1)*(1+boosterBonus("click"));
     if(buff&&buff.until>Date.now()&&(buff.type==="click"||buff.type==="goldrush"))value*=buff.clickMult||buff.mult;
     return value * premiumMultiplier;
   }
@@ -328,7 +374,7 @@
     $("lifetime").textContent=euro(state.lifetime);
     $("perClick").textContent=euro(clickValue(),clickValue()<10?1:0)+" / click";
     const active=buff&&buff.until>Date.now();
-    $("buffBar").textContent=active?(buff.type==="goldrush"?"GOLD RUSH":buff.type==="income"?"INCOME BOOST":"CLICK BOOST")+" ×"+buff.mult+" · "+duration((buff.until-Date.now())/1000)+" left":"";
+    $("buffBar").textContent=active?"GOLD RUSH ×7 · 00:"+String(Math.max(0,Math.ceil((buff.until-Date.now())/1000))).padStart(2,"0"):"";
     updatePile();
   }
   function compactGroup(amount) {
@@ -522,7 +568,7 @@
       ["Highest money per second",euro(state.highestRate,1)],["Businesses purchased",format(state.businessesPurchased)],
       ["Golden Bills clicked",format(state.goldenClicked)],["Achievements unlocked",state.achievements.length+" / "+ACHIEVEMENTS.length],
       ["Rebirths",format(state.rebirths)],["Total playtime",duration(state.totalPlaytime)],
-      ["Current session",duration((Date.now()-sessionStart)/1000)],["Empire Points",format(state.empireTotal)]
+      ["Current session",duration(sessionActiveSeconds)],["Empire Points",format(state.empireTotal)]
     ];
     const grid=$("statsGrid");grid.replaceChildren();
     for(const [label,value] of values) {
@@ -553,27 +599,67 @@
     }
   }
   function pointsAvailable() {return Math.max(0,state.empireTotal-state.empireSpent);}
-  function potentialPoints() {return Math.floor(Math.sqrt(state.runEarned/10000000));}
-  function pointsGain() {return Math.max(0,potentialPoints()-state.empireTotal);}
+  function pointsGain() {return state.runEarned<1000000?0:Math.floor(Math.sqrt(state.runEarned/1000000)*(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints")));}
   function renderPrestige() {
     const gain=pointsGain();
     $("pointsOwned").textContent=format(pointsAvailable());
     $("pointsGain").textContent="+"+format(gain);
     const pointRate=hasPrestige("compound")?.015:.01;
-    $("rebirthBonus").textContent="+"+format((state.empireTotal+gain)*pointRate*100,1)+"%";
-    const nextTarget=Math.pow(state.empireTotal+1,2)*10000000;
-    $("rebirthNext").textContent=gain ? "Rebirth now to bank your new points." : "Next point at "+euro(nextTarget)+" earned in this run.";
+    const after=(1+(state.rebirths+1)*.1)*(1+(state.empireTotal+gain)*pointRate);
+    $("rebirthBonus").textContent="+"+format((after-1)*100,1)+"%";
+    const nextTarget=Math.max(1000000,Math.ceil(Math.pow(gain+1,2)*1000000/Math.pow(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints"),2)));
+    $("rebirthNext").textContent=gain?"Rebirth now to bank your points. Next point near "+euro(nextTarget)+" this run.":"First point at $1,000,000 earned this run.";
     $("rebirthButton").disabled=gain<=0;
-    const tree=$("prestigeTree");tree.replaceChildren();
-    for(const p of PRESTIGE) {
-      const owned=hasPrestige(p.id),card=document.createElement("div");card.className="investment-card";
-      const icon=document.createElement("div");icon.className="upgrade-icon";if(p.image){const art=document.createElement("img");art.src=p.image;art.alt="";icon.append(art);}else icon.textContent=p.icon;
-      const info=document.createElement("div");info.className="upgrade-info";
-      const name=document.createElement("strong");name.textContent=p.name;
-      const desc=document.createElement("p");desc.textContent=p.description;
-      info.append(name,desc);
-      card.append(icon,info,makeButton(owned?"OWNED":format(p.cost)+" points",owned||pointsAvailable()<p.cost,()=>buyPrestige(p)));
-      tree.append(card);
+    for(const [target,upgrades] of [["earlyPrestigeTree",PRESTIGE.filter(p=>p.early)],["prestigeTree",PRESTIGE.filter(p=>!p.early)]]){
+      const tree=$(target);tree.replaceChildren();
+      for(const p of upgrades){
+        const owned=hasPrestige(p.id),card=document.createElement("div");card.className="investment-card";
+        const icon=document.createElement("div");icon.className="upgrade-icon";
+        if(p.image){const art=document.createElement("img");art.src=p.image;art.alt="";icon.append(art);}else icon.textContent=p.icon;
+        const info=document.createElement("div");info.className="upgrade-info";
+        const name=document.createElement("strong");name.textContent=p.name;
+        const desc=document.createElement("p");desc.textContent=p.description;
+        info.append(name,desc);
+        card.append(icon,info,makeButton(owned?"OWNED":format(p.cost)+" points",owned||pointsAvailable()<p.cost,()=>buyPrestige(p)));
+        tree.append(card);
+      }
+    }
+  }
+  function boosterSlotOpen(slot){return slot<=state.boosterSlotsUnlocked||state.premiumBoosterSlots.includes(slot);}
+  function buyBoosterSlot(slot){
+    if(slot!==state.boosterSlotsUnlocked+1||slot>4||state.money<SLOT_PRICES[slot])return;
+    if(cloudMode){queueCloudAction({type:"unlock_slot",slot});return;}
+    state.money-=SLOT_PRICES[slot];state.boosterSlotsUnlocked=slot;afterAction();
+  }
+  function equipBooster(id){
+    const slot=Array.from({length:6},(_,i)=>i+1).find(n=>boosterSlotOpen(n)&&!state.equippedBoosters[n-1]);
+    if(!slot||!state.boosterInventory[id]||state.equippedBoosters.includes(id))return;
+    if(cloudMode){queueCloudAction({type:"equip_booster",slot,boosterId:id});return;}
+    state.equippedBoosters[slot-1]=id;afterAction();
+  }
+  function unequipBooster(slot){
+    if(!state.equippedBoosters[slot-1])return;
+    if(cloudMode){queueCloudAction({type:"unequip_booster",slot});return;}
+    state.equippedBoosters[slot-1]=null;afterAction();
+  }
+  function renderBoosters(){
+    const slots=$("boosterSlots"),inventory=$("boosterInventory");slots.replaceChildren();inventory.replaceChildren();
+    for(let slot=1;slot<=6;slot++){
+      const open=boosterSlotOpen(slot),id=state.equippedBoosters[slot-1],booster=BOOSTERS.find(b=>b.id===id);
+      const card=featureElement("div","booster-slot"+(open?"":" locked"));
+      card.append(featureElement("strong","","Slot "+slot),featureElement("span","",booster?booster.name:open?"Empty":slot>=5?"Premium · Coming soon":"Locked"));
+      if(booster)card.append(makeButton("Unequip",false,()=>unequipBooster(slot)));
+      else if(!open&&slot<=4)card.append(makeButton(slot===state.boosterSlotsUnlocked+1?euro(SLOT_PRICES[slot]):"Unlock previous",slot!==state.boosterSlotsUnlocked+1||state.money<SLOT_PRICES[slot],()=>buyBoosterSlot(slot)));
+      slots.append(card);
+    }
+    for(const b of BOOSTERS){
+      const count=Number(state.boosterInventory[b.id])||0,card=featureElement("div","booster-card "+b.rarity+(count?"":" locked"));
+      card.append(featureElement("div","booster-art",b.rarity==="mythic"?"✦":"◆"));
+      const info=featureElement("div","booster-info");
+      info.append(featureElement("strong","",b.name+" · "+count),featureElement("small","",b.rarity.toUpperCase()),featureElement("p","",b.description));
+      const canEquip=count>0&&!state.equippedBoosters.includes(b.id)&&Array.from({length:6},(_,i)=>i+1).some(n=>boosterSlotOpen(n)&&!state.equippedBoosters[n-1]);
+      card.append(info,makeButton(state.equippedBoosters.includes(b.id)?"Equipped":"Equip",!canEquip,()=>equipBooster(b.id)));
+      inventory.append(card);
     }
   }
   function buyPrestige(p) {
@@ -588,6 +674,7 @@
     if(activeTab==="upgrades")renderUpgrades();
     else if(activeTab==="stats")renderStats();
     else if(activeTab==="achievements")renderAchievements();
+    else if(activeTab==="boosters")renderBoosters();
     else renderPrestige();
     renderBusinesses();
   }
@@ -614,7 +701,7 @@
   }
   function openFeature(name) {
     featureMode=name;
-    $("featureModal").className="feature-modal"+(name==="store"?" store-view":"");
+    $("featureModal").className="feature-modal"+(name==="store"?" store-view":name==="leaderboard"?" leaderboard-view":"");
     $("featureBackdrop").hidden=false;
     if(name==="leaderboard")renderLeaderboard();
     else {renderPremiumStore();refreshPremiumStatus().then(()=>{renderTop();renderOwned();renderCurrent();});}
@@ -654,7 +741,7 @@
     const header=featureElement("div","feature-header");
     const titleBox=featureElement("div");
     const heading=featureElement("h2","",title);heading.id="featureTitle";
-    titleBox.append(featureElement("span","eyebrow","CASH EMPIRE"),heading);
+    titleBox.append(featureElement("span","eyebrow","ClickTheCash"),heading);
     header.append(titleBox);
     if(buttonLabel)header.append(makeButton(buttonLabel,false,handler));
     return header;
@@ -671,13 +758,13 @@
   async function renderLeaderboard() {
     const body=$("featureBody");body.className="feature-body";body.replaceChildren();
     body.append(featureHeader("Leaderboard","Refresh",renderLeaderboard));
-    const status=featureElement("div","feature-message","Loading the Top 100...");
+    const status=featureElement("div","feature-message","Loading the Top 30...");
     body.append(status);
     try {
       const data=await apiJson("/api/leaderboard");
       if(featureMode!=="leaderboard")return;
       status.remove();
-      const players=Array.isArray(data.players)?data.players.slice(0,100):[];
+      const players=Array.isArray(data.players)?data.players.slice(0,30):[];
       if(!players.length){
         body.append(featureElement("div","feature-message","No players yet. Be the first!"));
       } else {
@@ -686,12 +773,12 @@
         for(const label of ["Rank","Username","Lifetime Cash","Rebirths"])heading.append(featureElement("span","",label));
         list.append(heading);
         for(const player of players){
-          if(!Number.isInteger(player.rank)||player.rank<1||player.rank>100||typeof player.username!=="string")continue;
+          if(!Number.isInteger(player.rank)||player.rank<1||player.rank>30||typeof player.username!=="string")continue;
           list.append(leaderboardRow(player));
         }
         body.append(list);
       }
-      if(data.me&&Number.isInteger(data.me.rank)&&data.me.rank>100){
+      if(data.me&&Number.isInteger(data.me.rank)&&data.me.rank>30){
         const own=leaderboardRow({...data.me,isSelf:true},true);
         body.append(own);
       }
@@ -797,7 +884,7 @@
     ]);
   }
   function applyCloudSnapshot(data,reset=false){
-    if(reset){const settings=state.settings;state=defaultState();state.settings=settings;}
+    if(reset){const settings=state.settings,achievements=state.achievements;state=defaultState();state.settings=settings;state.achievements=achievements;}
     state.money=safeNumber(data.balance);
     state.lifetime=safeNumber(data.lifetimeCash);
     state.runEarned=safeNumber(data.runEarned);
@@ -805,9 +892,24 @@
     state.empireTotal=safeNumber(data.empirePoints);
     state.empireSpent=safeNumber(data.empireSpent);
     state.totalClicks=safeNumber(data.totalClicks);
+    state.totalPlaytime=safeNumber(data.totalPlaytime);
     for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
     state.upgrades=Array.isArray(data.upgrades)?data.upgrades:[];
     state.prestigeUpgrades=Array.isArray(data.prestigeUpgrades)?data.prestigeUpgrades:[];
+    state.boosterInventory=data.boosterInventory&&typeof data.boosterInventory==="object"?data.boosterInventory:{};
+    state.equippedBoosters=Array.isArray(data.equippedBoosters)?data.equippedBoosters:[];
+    state.boosterSlotsUnlocked=Math.max(1,Math.min(4,Number(data.boosterSlotsUnlocked)||1));
+    state.premiumBoosterSlots=Array.isArray(data.premiumBoosterSlots)?data.premiumBoosterSlots:[];
+    state.pendingDropUntilMs=safeNumber(data.pendingDropUntilMs);
+    state.rushUntilMs=safeNumber(data.rushUntilMs);
+    buff=state.rushUntilMs>Date.now()?{type:"goldrush",mult:7,until:state.rushUntilMs}:null;
+    applySettings();updateDropDisplay();
+    if(data.event?.type==="goldenCash")toast("Golden Bill: +"+euro(data.event.amount)+"!");
+    if(data.event?.type==="goldRush"){toast("GOLD RUSH! All earnings ×7 for 30 seconds!");setTicker("GOLD RUSH · Everything turns gold for 30 seconds.");}
+    if(data.event?.type==="boosterDrop"){
+      const found=BOOSTERS.find(b=>b.id===data.event.boosterId);
+      if(found)toast("Booster found: "+found.name+" ("+found.rarity+")!");
+    }
     state.lastPlayed=Date.now();
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
   }
@@ -831,7 +933,7 @@
       const seen=new Set();
       cloudOutbox=saved.filter(op=>op&&typeof op==="object"&&
         /^[A-Za-z0-9_-]{12,80}$/.test(op.actionId)&&!seen.has(op.actionId)&&
-        ["click_batch","golden","buy_business","buy_upgrade","buy_prestige","rebirth"].includes(op.type)&&
+        ["click_batch","golden","buy_business","buy_upgrade","buy_prestige","rebirth","unlock_slot","equip_booster","unequip_booster","claim_booster_drop"].includes(op.type)&&
         (op.type!=="click_batch"||Number.isInteger(op.count)&&op.count>=1&&op.count<=CLOUD_BATCH_SIZE)&&
         (seen.add(op.actionId),true));
       // Write safe actions first; only then remove obsolete click queues and pacing data.
@@ -865,7 +967,7 @@
       if(backup&&!localStorage.getItem(LOCAL_BACKUP))localStorage.setItem(LOCAL_BACKUP,JSON.stringify(state));
       const data=await apiJson("/api/progress/snapshot");
       cloudMode=true;pendingClicks=0;buff=null;goldenExpires=0;$("goldenBill").hidden=true;applySettings();localStorage.setItem(CLOUD_CHOICE,"cloud");
-      applyCloudSnapshot(data,true);restoreCloudOutbox();startCloudDrain();toast("Verified cloud run active");
+      applyCloudSnapshot(data,true);restoreCloudOutbox();startCloudDrain();lastHeartbeatSent=0;sendHeartbeat(true);toast("Verified cloud run active");
     }catch(error){toast(error.message||"Cloud progress unavailable.");}
   }
   async function postCloudAction(action){
@@ -935,6 +1037,7 @@
     if(cloudMode){
       queueCloudAction(null);await cloudQueue;
       if(cloudOutbox.length||pendingClicks){toast("Cloud sync is pending. Try signing out when connected.");return;}
+      await sendHeartbeat(false);
     }
     try{await apiJson("/api/auth/signout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
     catch(_){toast("Sign out failed. Try again.");return;}
@@ -974,10 +1077,18 @@
     s.prestigeUpgrades=Array.isArray(raw.prestigeUpgrades)?[...new Set(raw.prestigeUpgrades.filter(x=>validPrestige.has(x)))]:[];
     s.empireSpent=Math.min(s.empireTotal,s.empireSpent);
     for(const key of Object.keys(s.settings))if(typeof raw.settings?.[key]==="boolean")s.settings[key]=raw.settings[key];
+    const validBoosters=new Set(BOOSTERS.map(b=>b.id));
+    for(const [id,count] of Object.entries(raw.boosterInventory||{}))if(validBoosters.has(id))s.boosterInventory[id]=Math.min(1000000,Math.floor(safeNumber(count)));
+    const seen=new Set();s.equippedBoosters=Array.from({length:6},(_,i)=>{const id=raw.equippedBoosters?.[i];if(!validBoosters.has(id)||!s.boosterInventory[id]||seen.has(id))return null;seen.add(id);return id;});
+    s.boosterSlotsUnlocked=Math.max(1,Math.min(4,Math.floor(safeNumber(raw.boosterSlotsUnlocked,1))));
+    s.premiumBoosterSlots=[];
+    s.nextDropPlaytimeMs=Math.max(DROP_INTERVAL_MS,safeNumber(raw.nextDropPlaytimeMs,(Math.floor(s.totalPlaytime*1000/DROP_INTERVAL_MS)+1)*DROP_INTERVAL_MS));
+    s.pendingDropUntilMs=safeNumber(raw.pendingDropUntilMs);s.rushUntilMs=safeNumber(raw.rushUntilMs);
     return s;
   }
   function load() {
-    try {const text=localStorage.getItem(SAVE_KEY);if(text)state=normalize(JSON.parse(text));}
+    try {const text=localStorage.getItem(SAVE_KEY);if(text)state=normalize(JSON.parse(text));
+      if(state.rushUntilMs>Date.now())buff={type:"goldrush",mult:7,until:state.rushUntilMs};}
     catch (_) {state=defaultState();toast("Saved data could not be read. A fresh game has started.");}
   }
   function exportSave() {
@@ -990,7 +1101,7 @@
   }
   function importSave() {
     const wrap=document.createElement("div"),intro=document.createElement("p"),area=document.createElement("textarea");
-    intro.textContent="Paste a Cash Empire save code. Importing replaces your current progress.";
+    intro.textContent="Paste a ClickTheCash save code. Importing replaces your current progress.";
     area.placeholder="Paste save code here";area.setAttribute("aria-label","Import save code");
     wrap.append(intro,area);
     modal("Import Save",wrap,[{label:"Cancel",action:()=>{}},{label:"Import",close:false,action:()=>{
@@ -1005,9 +1116,9 @@
     }}]);
   }
   function resetGame() {
-    modal("Reset Game","This permanently erases the Cash Empire save in this browser. Export it first if you want a backup.",[
+    modal("Reset Game","This permanently erases the ClickTheCash save in this browser. Export it first if you want a backup.",[
       {label:"Cancel",action:()=>{}},
-      {label:"Erase Progress",action:()=>{cloudMode=false;localStorage.setItem(CLOUD_CHOICE,"local");state=defaultState();buff=null;goldenExpires=0;$("goldenBill").hidden=true;sessionStart=Date.now();applySettings();save();afterAction();toast("Game reset");}}
+      {label:"Erase Progress",action:()=>{cloudMode=false;localStorage.setItem(CLOUD_CHOICE,"local");state=defaultState();buff=null;goldenExpires=0;$("goldenBill").hidden=true;sessionActiveSeconds=0;applySettings();save();afterAction();toast("Game reset");}}
     ]);
   }
   function rebirth() {
@@ -1019,51 +1130,98 @@
         const keep={lifetime:state.lifetime,achievements:state.achievements,prestigeUpgrades:state.prestigeUpgrades,
           empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
           totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
-          highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings};
+          highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings,
+          boosterInventory:state.boosterInventory,equippedBoosters:state.equippedBoosters,boosterSlotsUnlocked:state.boosterSlotsUnlocked,
+          premiumBoosterSlots:state.premiumBoosterSlots,nextDropPlaytimeMs:state.nextDropPlaytimeMs,pendingDropUntilMs:state.pendingDropUntilMs};
         state=Object.assign(defaultState(),keep);
+        if(hasPrestige("starterCapital"))state.money=250;
+        if(hasPrestige("quickCollectors"))state.businesses.collector=5;
         if(hasPrestige("automation")){state.businesses.collector=10;state.businesses.lemonade=5;}
         buff=null;goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay();
         playTone(1000);toast("Reborn with "+format(gain)+" Empire Points");afterAction();
       }}
     ]);
   }
-  function randomBillDelay() {return (180+Math.random()*180)*1000;}
+  function goldenFrequency(){return 1+(hasPrestige("goldenRadar")?.1:0)+(hasPrestige("lucky")?.3:0)+boosterBonus("goldenFrequency");}
+  function randomBillDelay() {return (180+Math.random()*180)*1000/goldenFrequency();}
   function spawnGolden() {
     goldenExpires=Date.now()+12000;
     const bill=$("goldenBill");bill.hidden=false;
     bill.style.left=(15+Math.random()*65)+"%";bill.style.top=(15+Math.random()*55)+"%";
+    updateEventCountdowns();
+  }
+  function updateEventCountdowns(){
+    $("goldenCountdown").textContent=String(Math.max(0,Math.ceil((goldenExpires-Date.now())/1000)));
+    $("dropCountdown").textContent=String(Math.max(0,Math.ceil((state.pendingDropUntilMs-Date.now())/1000)));
+  }
+  function updateDropDisplay(){
+    const box=$("boosterDrop"),active=state.pendingDropUntilMs>Date.now();box.hidden=!active;
+    if(active){box.style.left="68%";box.style.top="18%";updateEventCountdowns();}
+  }
+  function goldBurst(element){
+    if(!state.settings.animations||!state.settings.particles)return;
+    const layer=$("burstLayer"),zone=$("pileZone").getBoundingClientRect(),rect=element.getBoundingClientRect();
+    const x=rect.left-zone.left+rect.width/2,y=rect.top-zone.top+rect.height/2;
+    for(let i=0;i<12;i++){
+      const spark=document.createElement("i");spark.className="gold-spark";
+      const angle=i*Math.PI/6,dist=35+Math.random()*42;
+      spark.style.left=x+"px";spark.style.top=y+"px";
+      spark.style.setProperty("--dx",Math.cos(angle)*dist+"px");spark.style.setProperty("--dy",Math.sin(angle)*dist+"px");
+      layer.append(spark);setTimeout(()=>spark.remove(),750);
+    }
   }
   function claimGolden() {
     if(!goldenExpires || Date.now()>goldenExpires)return;
-    goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay()*(hasPrestige("lucky")?.7:1);
+    goldBurst($("goldenBill"));goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay();
     state.goldenClicked++;
     if(cloudMode){queueCloudAction({type:"golden"});return;}
-    const roll=Math.random();
-    if(roll<.25){buff={type:"goldrush",mult:10,clickMult:10,until:Date.now()+30000};toast("GOLD RUSH! Income and clicks ×10 for 30 seconds!");setTicker("GOLD RUSH • Every move turns to gold for 30 seconds.");}
-    else if(roll<.49){buff={type:"income",mult:7,until:Date.now()+30000};toast("Golden Bill: income ×7 for 30 seconds!");}
-    else if(roll<.73){const prize=Math.max(100,baseRate()*180,clickValue()*50);addMoney(prize);toast("Golden Bill: +"+euro(prize)+"!");}
-    else if(roll<.9){buff={type:"click",mult:20,until:Date.now()+15000};toast("Golden Bill: clicks ×20 for 15 seconds!");}
-    else {buff={type:"income",mult:12,until:Date.now()+15000};toast("Golden Bill: businesses ×12 for 15 seconds!");}
-    applySettings();
-    playTone(1200);afterAction();
+    if(Math.random()<.35){
+      state.rushUntilMs=Date.now()+30000;buff={type:"goldrush",mult:7,until:state.rushUntilMs};
+      toast("GOLD RUSH! All earnings ×7 for 30 seconds!");setTicker("GOLD RUSH · Everything turns gold for 30 seconds.");
+    }else{
+      const base=Math.max(500,baseRate()*180,clickValue()*100);
+      const prize=base*(.8+Math.random()*.6)*(1+(hasPrestige("goldenReserve")?.25:0)+boosterBonus("goldenCash"));
+      addMoney(prize);toast("Golden Bill: +"+euro(prize)+"!");
+    }
+    applySettings();playTone(1200);afterAction();
+  }
+  function rollLocalBooster(){
+    let chance=Math.random()*100,rarity="common";
+    for(const [name,weight] of [["common",55],["rare",28],["epic",12],["legendary",4],["mythic",1]]){chance-=weight;if(chance<0){rarity=name;break;}}
+    const pool=BOOSTERS.filter(b=>b.rarity===rarity);
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+  function claimBoosterDrop(){
+    if(!state.pendingDropUntilMs||Date.now()>state.pendingDropUntilMs)return;
+    goldBurst($("boosterDrop"));state.pendingDropUntilMs=0;updateDropDisplay();
+    if(cloudMode){queueCloudAction({type:"claim_booster_drop"});return;}
+    const booster=rollLocalBooster();state.boosterInventory[booster.id]=(state.boosterInventory[booster.id]||0)+1;
+    toast("Booster found: "+booster.name+" ("+booster.rarity+")!");afterAction();
   }
   function applyOffline() {
     const away=Math.max(0,Math.min(Date.now()-state.lastPlayed,7*24*3600000));
     if(away<60000)return;
     const capped=Math.min(away/1000,(hasPrestige("nightshift")?16*3600:OFFLINE_CAP));
     const production=baseRate();
-    const earned=earnBusinesses(capped*.5,false);
+    const earned=earnBusinesses(capped*(hasPrestige("offlineOffice")?.6:.5)*(1+boosterBonus("offline")),false);
     save();
     if(earned>0){
       const wrap=document.createElement("div"),p=document.createElement("p");
-      p.textContent="You were away for "+duration(away/1000)+". Production: "+euro(production,1)+"/sec. Offline efficiency: 50%. You earned "+euro(earned)+". The time cap is "+(hasPrestige("nightshift")?16:10)+" hours.";
+      p.textContent="You were away for "+duration(away/1000)+". Production: "+euro(production,1)+"/sec. Offline efficiency: "+format((hasPrestige("offlineOffice")?.6:.5)*(1+boosterBonus("offline"))*100)+"%. You earned "+euro(earned)+". The time cap is "+(hasPrestige("nightshift")?16:10)+" hours.";
       pendingAccountRefresh=true;wrap.append(p);modal("Welcome Back",wrap,[{label:"Collect",action:()=>{}}]);
       return true;
     }
   }
+  function updateFitScreen(){
+    if(!state.settings.fitScreen){document.documentElement.style.removeProperty("--fit-scale");return;}
+    const viewport=window.visualViewport;
+    const width=viewport?.width||window.innerWidth,height=viewport?.height||window.innerHeight;
+    document.documentElement.style.setProperty("--fit-scale",String(Math.max(.1,Math.min(width/900,height/700,1))));
+  }
   function applySettings() {
     document.documentElement.classList.toggle("light",state.settings.light);
     document.documentElement.classList.toggle("fit-screen",state.settings.fitScreen);
+    updateFitScreen();
     const fit=$("fitScreen");if(fit){fit.textContent="Fit screen: "+(state.settings.fitScreen?"ON":"OFF");fit.setAttribute("aria-pressed",String(state.settings.fitScreen));}
     document.documentElement.classList.toggle("reduce-motion",!state.settings.animations);
     document.documentElement.classList.toggle("gold-rush",Boolean(buff&&buff.type==="goldrush"&&buff.until>Date.now()));
@@ -1102,30 +1260,58 @@
     layer.append(bill);
     setTimeout(()=>bill.remove(),5100);
   }
+  async function sendHeartbeat(active=true){
+    if(!cloudMode||heartbeatBusy||(active&&document.hidden))return;
+    heartbeatBusy=true;
+    try{
+      if(active){stagePendingClicks();await startCloudDrain();}
+      const data=await apiJson("/api/progress/heartbeat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})});
+      if(active&&cloudMode)applyCloudSnapshot(data);
+      lastHeartbeatSent=Date.now();
+    }catch(error){if(active&&error.status!==409)toast("Playtime sync will retry shortly.");}
+    finally{heartbeatBusy=false;}
+  }
+  function pauseHeartbeat(){
+    if(!cloudMode)return;
+    fetch("/api/progress/heartbeat",{method:"POST",credentials:"same-origin",keepalive:true,
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({active:false})}).catch(()=>{});
+  }
   function tick() {
     const now=Date.now(),elapsed=Math.max(0,(now-lastTick)/1000);lastTick=now;
     if(elapsed>0){
       const productive=Math.min(elapsed,hasPrestige("nightshift")?16*3600:OFFLINE_CAP);
-      earnBusinesses(productive*(elapsed>60?.5:1),true);
-      state.totalPlaytime+=Math.min(elapsed,productive);
+      const efficiency=elapsed>60||document.hidden?(hasPrestige("offlineOffice")?.6:.5)*(1+boosterBonus("offline")):1;
+      earnBusinesses(productive*efficiency,!document.hidden);
+      if(!document.hidden){
+        const active=Math.min(elapsed,5);state.totalPlaytime+=active;sessionActiveSeconds+=active;
+        if(!cloudMode&&state.totalPlaytime*1000>=state.nextDropPlaytimeMs){
+          state.nextDropPlaytimeMs+=DROP_INTERVAL_MS;
+          if(!state.pendingDropUntilMs&&Math.random()<.08){state.pendingDropUntilMs=now+20000;updateDropDisplay();toast("BOOSTER DROP! Claim it before it disappears.");}
+          save();
+        }
+      }
     }
-    if(buff&&now>=buff.until){buff=null;applySettings();toast("Bonus ended");}
-    if(goldenExpires&&now>=goldenExpires){goldenExpires=0;$("goldenBill").hidden=true;goldenNext=now+randomBillDelay()*(hasPrestige("lucky")?.7:1);}
-    if(!goldenExpires&&now>=goldenNext)spawnGolden();
+    if(buff&&now>=buff.until){buff=null;state.rushUntilMs=0;applySettings();toast("Gold Rush ended");}
+    if(goldenExpires&&now>=goldenExpires){goldenExpires=0;$("goldenBill").hidden=true;goldenNext=now+randomBillDelay();}
+    if(!goldenExpires&&!document.hidden&&now>=goldenNext)spawnGolden();
+    if(state.pendingDropUntilMs&&now>=state.pendingDropUntilMs){state.pendingDropUntilMs=0;updateDropDisplay();save();}
+    if(goldenExpires||state.pendingDropUntilMs)updateEventCountdowns();
     state.highestRate=Math.max(state.highestRate,currentRate());
     if(now>=ambientNext)spawnAmbientBill();
     if(now>=tickerNext)rotateTicker();
+    if(cloudMode&&!document.hidden&&now-lastHeartbeatSent>=30000)sendHeartbeat(true);
     if(cloudMode&&!cloudBusy&&!cloudRetryTimer&&now-lastCloudSync>30000)queueCloudAction(null);
     renderTop();
-    if(now-renderTimer>600){renderCurrent();renderTimer=now;}
+    if(now-renderTimer>1000){renderCurrent();renderTimer=now;}
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
   }
   async function init() {
-    setupMusic();buildWealthArt();load();applySettings();renderTop();renderOwned();
+    setupMusic();buildWealthArt();load();goldenNext=Date.now()+randomBillDelay();applySettings();renderTop();renderOwned();
     await refreshPremiumStatus();
     if(!applyOffline())await refreshAccount();
     pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
+    $("boosterDrop").addEventListener("click",claimBoosterDrop);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
       buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();
@@ -1134,6 +1320,9 @@
     $("importSave").addEventListener("click",importSave);
     $("resetGame").addEventListener("click",resetGame);
     $("fitScreen").addEventListener("click",()=>{state.settings.fitScreen=!state.settings.fitScreen;applySettings();save();});
+    window.addEventListener("resize",updateFitScreen);
+    window.addEventListener("orientationchange",updateFitScreen);
+    window.visualViewport?.addEventListener("resize",updateFitScreen);
     $("accountButton").addEventListener("click",()=>{$("accountMenu").hidden=!$("accountMenu").hidden;});
     $("accountDetails").addEventListener("click",()=>{ $("accountMenu").hidden=true;showAccountDetails();});
     $("signOut").addEventListener("click",signOut);
@@ -1146,9 +1335,12 @@
     window.addEventListener("online",()=>{
       if(cloudMode&&cloudOutbox.length){cloudRetryStoppedAt=0;cloudRetryCount=0;clearTimeout(cloudRetryTimer);cloudRetryTimer=0;startCloudDrain();}
     });
-    window.addEventListener("pagehide",()=>{save();if(cloudMode)queueCloudAction(null);});
-    document.addEventListener("visibilitychange",()=>{if(document.hidden){save();if(cloudMode)queueCloudAction(null);}});
-    renderTop();renderOwned();renderCurrent();checkAchievements();rotateTicker();setInterval(tick,100);
+    window.addEventListener("pagehide",()=>{save();pauseHeartbeat();if(cloudMode)queueCloudAction(null);});
+    document.addEventListener("visibilitychange",()=>{
+      if(document.hidden){save();pauseHeartbeat();if(cloudMode)queueCloudAction(null);}
+      else {const now=Date.now(),away=Math.max(0,(now-lastTick)/1000);if(away>0&&!cloudMode)earnBusinesses(Math.min(away,OFFLINE_CAP)*(hasPrestige("offlineOffice")?.6:.5)*(1+boosterBonus("offline")),false);lastTick=now;if(cloudMode)sendHeartbeat(true);}
+    });
+    renderTop();renderOwned();renderCurrent();updateDropDisplay();checkAchievements();rotateTicker();setInterval(tick,100);
     setInterval(save,10000);
   }
   window.CashEmpireMath={totalCost,maxAffordable,format,businessUnitRate,earnBusinesses,getWealthVisualTier,configs:BUSINESS};
