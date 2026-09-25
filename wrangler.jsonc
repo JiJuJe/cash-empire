@@ -7,6 +7,10 @@
     "PUBLIC_SITE_URL": "https://clickthecash.online"
   },
 
+  "secrets": {
+    "required": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SESSION_SECRET"]
+  },
+
   "assets": {
     "directory": "./CashEmpire",
     "binding": "ASSETS",
