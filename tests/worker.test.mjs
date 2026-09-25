@@ -28,6 +28,21 @@ test("server batches clicks, validates prices, and halves offline passive income
   assert.equal(regular.balance,1011);
 });
 
+test("60 seconds of manual click batches survive interleaved purchases without weakening the click rate",()=>{
+  let state=progress({balance:100000,lifetime:100000,runEarned:100000});
+  for(let batch=0;batch<30;batch++){
+    const now=100000+batch*2000;
+    state=testing.applyAction(state,{type:"click_batch",count:24},now,false);
+    state=testing.applyAction(state,{type:"buy_business",businessId:"collector",quantity:1},now+1000,false);
+  }
+  assert.equal(state.totalClicks,720);
+  assert.equal(state.businesses.collector,30);
+  assert.throws(()=>testing.applyAction(state,{type:"click_batch",count:37},160000,false),/Invalid click batch/);
+  const fresh=testing.applyAction(progress(),{type:"click_batch",count:24},100000,false);
+  assert.throws(()=>testing.applyAction(fresh,{type:"click_batch",count:24},100100,false),/Invalid click batch/);
+  assert.equal(testing.applyAction(fresh,{type:"click_batch",count:24},102000,false).totalClicks,48);
+});
+
 test("rebirth, golden reward, and entitlement use server-calculated values",()=>{
   const reborn=testing.applyAction(progress({runEarned:10000000}),{type:"rebirth"},100000,false);
   assert.equal(reborn.rebirths,1);

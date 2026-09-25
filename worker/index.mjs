@@ -94,15 +94,22 @@ function upgradeFor(s,id){
       return {id,cost:Math.ceil(b.cost*count*costFactor),mult};
   return null;
 }
+const CLICK_BATCH_MAX=36,CLICK_RATE_PER_SECOND=12;
+function clickAllowance(s,now){
+  // last_click_ms is a virtual refill timestamp. Existing real timestamps remain valid.
+  if(!s.lastClickMs)return CLICK_BATCH_MAX;
+  return Math.max(0,Math.min(CLICK_BATCH_MAX,
+    Math.floor(CLICK_BATCH_MAX+(now-s.lastClickMs)*CLICK_RATE_PER_SECOND/1000)));
+}
 function applyAction(current,action,now,entitled){
   const s=structuredClone(current);
-  const previousAccrual=s.lastAccrualMs;
   advance(s,now,entitled);
   if(action.type==="click_batch"){
-    const count=action.count;
-    const maximum=Math.max(1,Math.min(120,Math.ceil(Math.max(0,now-previousAccrual)/80)));
-    if(!Number.isInteger(count)||count<1||count>maximum)throw Error("Invalid click batch.");
-    award(s,clickRate(s,entitled)*count);s.totalClicks+=count;s.lastClickMs=now;
+    const count=action.count,allowance=clickAllowance(s,now);
+    if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_MAX||count>allowance)
+      throw Error("Invalid click batch.");
+    award(s,clickRate(s,entitled)*count);s.totalClicks+=count;
+    s.lastClickMs=Math.round(now+(CLICK_BATCH_MAX-(allowance-count))*1000/CLICK_RATE_PER_SECOND);
   }else if(action.type==="golden"){
     if(now-s.lastGoldenMs<180000)throw Error("Golden Bill is not ready.");
     award(s,Math.max(100,businessRate(s,entitled)*180,clickRate(s,entitled)*50));s.lastGoldenMs=now;
@@ -235,11 +242,20 @@ async function getProgress(env,user){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  await rateLimit(env,request,"progress:"+user.id,60);
+  await rateLimit(env,request,"progress-all:"+user.id,420);
   const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count"]);
   if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
   const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"]};
   if(!allowed[action.type]||Object.keys(action).some(key=>!allowed[action.type].includes(key)))fail(400,"Invalid action.");
+  const bucket=action.type==="click_batch"?"progress-click:"+user.id:
+    action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"?"progress-purchase:"+user.id:
+    "progress-special:"+user.id;
+  await rateLimit(env,request,bucket,action.type==="click_batch"?90:bucket.startsWith("progress-purchase:")?300:60);
+  const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(action.actionId).first();
+  if(prior){
+    if(prior.user_id!==user.id||prior.action_type!==action.type)fail(409,"Action ID conflict.");
+    return getProgress(env,user);
+  }
   const entitled=await hasDoubleMoney(env,user.id);
   const now=Date.now(),row=await ensureProgress(env,user.id,now),current=loadProgress(row);
   let next;
