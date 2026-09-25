@@ -23,11 +23,11 @@
     {id:"multiverse",name:"Money Multiverse",image:"assets/money-multiverse.png",cost:10000000000000000000,income:1000000000000}
   ];
     const CLICK_UPGRADES = [
-    {id:"wallet",name:"Better Wallet",icon:"👛",cost:50,mult:2,unlock:25,description:"Click income ×2"},
+    {id:"wallet",name:"Better Wallet",image:"assets/ui/double-money.png",icon:"👛",cost:50,mult:2,unlock:25,description:"Click income ×2"},
     {id:"fingers",name:"Fast Fingers",icon:"⚡",cost:500,mult:2,unlock:250,description:"Click income ×2"},
     {id:"goldWallet",name:"Golden Wallet",icon:"💛",cost:10000,mult:3,unlock:5000,description:"Click income ×3"},
     {id:"diamond",name:"Diamond Hands",image:"assets/upgrade-diamond-hands.png",cost:1000000,mult:5,unlock:500000,description:"Click income ×5"},
-    {id:"magnet",name:"Money Magnet",icon:"🧲",cost:100000000,mult:10,unlock:50000000,description:"Click income ×10"},
+    {id:"magnet",name:"Money Magnet",image:"assets/ui/money-magnet.png",icon:"🧲",cost:100000000,mult:10,unlock:50000000,description:"Click income ×10"},
     {id:"quantum",name:"Quantum Purse",icon:"⚛",cost:10000000000,mult:10,unlock:5000000000,description:"Click income ×10"},
     {id:"cosmic",name:"Cosmic Grip",icon:"✦",cost:1000000000000,mult:20,unlock:500000000000,description:"Click income ×20"},
     {id:"infinite",name:"Infinite Pocket",icon:"∞",cost:1000000000000000,mult:50,unlock:500000000000000,description:"Click income ×50"}
@@ -37,7 +37,7 @@
     {id:"tapTraining",name:"Tap Training",icon:"✦",cost:2500,unlock:1000,description:"Click value +25%.",effect:"click",mult:1.25},
     {id:"vendingDining",name:"Lunch Rush",image:"assets/upgrade-lunch-rush.png",cost:250000,requires:{vending:5,restaurant:1},description:"Vending Machines boost Restaurants ×1.5.",effect:"restaurant",mult:1.5},
     {id:"restaurantSupply",name:"Supply Chain",icon:"◉",cost:3000000,requires:{restaurant:10,supermarket:1},description:"Restaurants boost Supermarkets ×1.5.",effect:"supermarket",mult:1.5},
-    {id:"cashflow",name:"Cashflow Forecast",icon:"▣",cost:50000000,unlock:20000000,description:"All businesses produce +5%.",effect:"total",mult:1.05},
+    {id:"cashflow",name:"Cashflow Forecast",image:"assets/ui/cashflow-forecast.png",icon:"▣",cost:50000000,unlock:20000000,description:"All businesses produce +5%.",effect:"total",mult:1.05},
     {id:"bankingNetwork",name:"Banking Network",icon:"⌁",cost:10000000000,requires:{bank:5,corporation:1},description:"Banks boost Corporations ×2.",effect:"corporation",mult:2},
     {id:"precisionTap",name:"Executive Touch",icon:"◆",cost:50000000000,unlock:10000000000,description:"Click value ×2.",effect:"click",mult:2}
   ];
@@ -55,7 +55,7 @@
     ["empireMomentum","Empire Momentum",8,"Permanent +15% total earnings."],
     ["goldenReserve","Golden Reserve",9,"Golden Bill cash rewards +25%."],
     ["rebirthMastery","Rebirth Mastery",10,"Future Rebirths give +15% Empire Points."]
-  ].map(([id,name,cost,description])=>({id,name,cost,description,icon:"✦",early:true}));
+  ].map(([id,name,cost,description])=>({id,name,cost,description,icon:"✦",image:id==="starterCapital"?"assets/ui/first-dollar.png":undefined,early:true}));
   const BOOSTERS=[
     ["coinPurse","Coin Purse","common","total",.04,"+4% total earnings"],
     ["fastHands","Fast Hands","common","click",.10,"+10% click earnings"],
@@ -314,8 +314,9 @@
     const node=document.createElement("div");node.className="toast"+(achievement?" achievement-toast":"");node.textContent=message;
     stack.append(node);node.dismissTimer=setTimeout(()=>node.remove(),3500);
   }
+  const ACHIEVEMENT_ART = {"earn-1":"first-dollar","click-1":"first-tap","business-1":"business-owner","rate-1":"first-dividend","gold-1":"golden-opportunity","rebirth-1":"new-beginning","upgrade-1":"smart-purchase","collector-1":"helping-hand","empire-1":"empire-point"};
   const ACHIEVEMENTS = [];
-  function achievement(id,name,description,icon,test) {ACHIEVEMENTS.push({id,name,description,icon,test});}
+  function achievement(id,name,description,icon,test) {ACHIEVEMENTS.push({id,name,description,icon,image:ACHIEVEMENT_ART[id]?"assets/ui/"+ACHIEVEMENT_ART[id]+".png":undefined,test});}
   [
     [1,"First Dollar"],[100,"Pocket Money"],[10000,"Getting Serious"],[1000000,"Millionaire"],
     [1000000000,"Billionaire"],[1000000000000,"Trillionaire"],[1e15,"Quadrillionaire"],
@@ -469,6 +470,12 @@
   function makeButton(label,disabled,handler) {
     const b=document.createElement("button");b.type="button";b.textContent=label;b.disabled=disabled;b.addEventListener("click",handler);return b;
   }
+  function setArtIcon(container,image,fallback) {
+    if(!image){container.textContent=fallback||"✦";return;}
+    const art=document.createElement("img");art.src=image;art.alt="";art.decoding="async";
+    art.addEventListener("error",()=>{art.remove();container.textContent=fallback||"✦";},{once:true});
+    container.append(art);
+  }
   function renderUpgrades() {
     const list=$("upgradeList"),upgrades=allUpgrades();
     $("upgradeCount").textContent=upgrades.length+" available";
@@ -477,7 +484,7 @@
     for(const u of upgrades) {
       const card=document.createElement("div");card.className="upgrade-card"+(estimatedAvailableMoney()>=u.cost?" affordable":"");
       const icon=document.createElement("div");icon.className="upgrade-icon";
-      if(u.image){const art=document.createElement("img");art.src=u.image;art.alt="";art.width=39;art.height=39;icon.append(art);}else icon.textContent=u.icon;
+      setArtIcon(icon,u.image,u.icon);
       const info=document.createElement("div");info.className="upgrade-info";
       const title=document.createElement("strong");title.textContent=u.name;
       const desc=document.createElement("p");desc.textContent=u.description;
@@ -602,7 +609,7 @@
     for(const a of ACHIEVEMENTS) {
       const unlocked=state.achievements.includes(a.id),card=document.createElement("div");
       card.className="achievement"+(unlocked?"":" locked");
-      const icon=document.createElement("div");icon.className="achievement-icon";icon.textContent=unlocked?a.icon:"?";
+      const icon=document.createElement("div");icon.className="achievement-icon";setArtIcon(icon,a.image,unlocked?a.icon:"?");
       const name=document.createElement("strong");name.textContent=unlocked?a.name:"Hidden achievement";
       const desc=document.createElement("p");desc.textContent=a.description;
       card.append(icon,name,desc);grid.append(card);
@@ -625,7 +632,7 @@
       for(const p of upgrades){
         const owned=hasPrestige(p.id),card=document.createElement("div");card.className="investment-card";
         const icon=document.createElement("div");icon.className="upgrade-icon";
-        if(p.image){const art=document.createElement("img");art.src=p.image;art.alt="";icon.append(art);}else icon.textContent=p.icon;
+        setArtIcon(icon,p.image,p.icon);
         const info=document.createElement("div");info.className="upgrade-info";
         const name=document.createElement("strong");name.textContent=p.name;
         const desc=document.createElement("p");desc.textContent=p.description;
@@ -1284,10 +1291,9 @@
     }
   }
   function updateFitScreen(){
-    if(!state.settings.fitScreen){document.documentElement.style.removeProperty("--fit-scale");return;}
-    const viewport=window.visualViewport;
-    const width=viewport?.width||window.innerWidth,height=viewport?.height||window.innerHeight;
-    document.documentElement.style.setProperty("--fit-scale",String(Math.max(.1,Math.min(width/900,height/700,1))));
+    if(!state.settings.fitScreen || window.innerWidth>900){document.documentElement.style.removeProperty("--fit-viewport-height");return;}
+    const height=window.visualViewport?.height||window.innerHeight;
+    document.documentElement.style.setProperty("--fit-viewport-height",Math.round(height)+"px");
   }
   function applySettings() {
     document.documentElement.classList.toggle("light",state.settings.light);
@@ -1384,6 +1390,7 @@
     if(new URLSearchParams(location.search).has("account_banned")){accountBlocked=true;showAccountNotice({message:"This account has been banned."});}
     pileEl.addEventListener("click",event=>{if(accountBlocked||account.moderation){toast("This account cannot use verified gameplay right now.");return;}if(cloudMode&&!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return;}const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();renderCloudStatus();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){if(cloudMode)stagePendingClicks();save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
+    $("goldenBillArt").addEventListener("error",()=>$("goldenBill").classList.add("asset-failed"),{once:true});
     $("boosterDrop").addEventListener("click",claimBoosterDrop);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{

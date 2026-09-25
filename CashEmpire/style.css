@@ -557,34 +557,115 @@ h1,h2,h3,p{margin-top:0}
   .income-line{font-size:clamp(12px,3vw,15px)}
   .booster-slots{grid-template-columns:1fr}
 }
-/* Fit Screen scales one fixed dashboard, including all three columns, into the visual viewport. */
-html.fit-screen,html.fit-screen body{width:100%;height:100%;overflow:hidden!important;overscroll-behavior:none}
-html.fit-screen .game-shell{position:absolute;left:0;top:0;width:900px;height:700px;min-height:0;overflow:hidden;transform:scale(var(--fit-scale,1));transform-origin:top left}
-html.fit-screen .market-ticker{height:42px;min-height:42px;padding:0 12px}
-html.fit-screen .ticker-label{display:inline;font-size:9px}
-html.fit-screen .columns{display:grid;grid-template-columns:31% 35% 34%;height:632px;min-height:0}
-html.fit-screen .play-column,html.fit-screen .content-column,html.fit-screen .store-column{grid-column:auto;height:632px;min-height:0;max-height:none;overflow:hidden}
-html.fit-screen .play-column{padding:12px;display:flex}
-html.fit-screen .play-header{flex-wrap:wrap}
-html.fit-screen .play-header h1{font-size:16px}
-html.fit-screen .balance-card{padding:10px 0 3px}
-html.fit-screen .balance{font-size:35px}
-html.fit-screen .play-column .pile-zone{height:auto;min-height:0;flex:1}
-html.fit-screen .play-column .money-pile{width:min(92%,270px)}
-html.fit-screen .progress-area{height:278px;min-height:0;flex:none}
-html.fit-screen .progress-area .tabs{height:50px;min-height:50px;display:flex;flex-wrap:nowrap}
-html.fit-screen .progress-area .tab{min-height:48px;font-size:10px;padding:6px}
-html.fit-screen .progress-area .tab-panel{padding:10px}
-html.fit-screen .world-panel{height:auto;min-height:0;flex:1;padding:10px}
-html.fit-screen .world-panel .owned-business-list{overflow-y:auto}
-html.fit-screen .store-top{padding:12px}
-html.fit-screen .business-list{display:block;max-height:none;overflow-y:auto}
-html.fit-screen .business-card{min-height:61px;padding:6px}
-html.fit-screen .business-card button{min-height:38px;font-size:11px}
-html.fit-screen .site-footer{height:26px;min-height:26px;padding:5px}
-
+/* Fit screen uses viewport-sized panels on phones; each long list scrolls inside its panel. */
+@media(max-width:900px){
+  html.fit-screen,html.fit-screen body{width:100%;height:100%;overflow:hidden!important;overscroll-behavior:none}
+  html.fit-screen .game-shell{position:fixed;inset:0 0 auto;width:100%;height:var(--fit-viewport-height,100dvh);min-height:0;display:flex;flex-direction:column;overflow:hidden;transform:none}
+  html.fit-screen .market-ticker{flex:none;height:40px;min-height:40px;padding:0 8px;gap:6px}
+  html.fit-screen .ticker-label,html.fit-screen .ticker-text{display:none}
+  html.fit-screen .cloud-sync-status{max-width:34vw;margin-right:auto}
+  html.fit-screen .fit-screen-toggle{display:inline-flex;align-items:center;min-height:32px;padding:4px 6px;font-size:10px}
+  html.fit-screen .account-controls a,html.fit-screen .account-controls>button{min-height:32px;padding:4px 6px;font-size:10px}
+  html.fit-screen .columns{flex:1;min-height:0;height:auto}
+  html.fit-screen .play-column,html.fit-screen .content-column,html.fit-screen .store-column{height:auto;min-height:0;max-height:none;overflow:hidden}
+  html.fit-screen .play-column{display:flex;padding:8px 10px;border-right:0;border-bottom:2px solid #436448}
+  html.fit-screen .play-header{gap:6px;flex-wrap:nowrap}
+  html.fit-screen .brand-mark{width:27px;height:27px;font-size:18px;border-radius:6px}
+  html.fit-screen .brand-kicker{display:none}
+  html.fit-screen .play-header h1{margin:0;font-size:15px}
+  html.fit-screen .music-controls{padding:2px 4px;gap:3px}
+  html.fit-screen .music-controls button{min-height:28px;min-width:28px;padding:2px;font-size:10px}
+  html.fit-screen .music-controls input{width:48px;height:28px}
+  html.fit-screen .music-volume-value{font-size:9px;min-width:23px}
+  html.fit-screen .balance-card{padding:3px 0 0}
+  html.fit-screen .balance{font-size:clamp(25px,7.7vw,34px);line-height:1.08}
+  html.fit-screen .income-line{font-size:10px;gap:5px;margin-top:2px}
+  html.fit-screen .play-column .pile-zone{height:auto;min-height:0;flex:1}
+  html.fit-screen .play-column .money-pile{height:100%;width:auto;max-width:min(48vw,190px);max-height:100%;aspect-ratio:1}
+  html.fit-screen .wealth-backdrop{width:min(48vw,190px)}
+  html.fit-screen .buff-bar{min-height:16px;font-size:10px}
+  html.fit-screen .play-footer{padding-top:4px;margin-top:0;font-size:10px}
+  html.fit-screen .play-footer strong{font-size:12px}
+  html.fit-screen .content-column{display:flex;flex-direction:column}
+  html.fit-screen .progress-area{height:auto;min-height:0;flex:0 0 55%;overflow-y:auto}
+  html.fit-screen .progress-area .tabs{height:45px;min-height:45px;flex-wrap:nowrap;padding-inline:8px;gap:8px}
+  html.fit-screen .progress-area .tab{min-height:43px;min-width:max-content;padding:6px 8px;font-size:11px;white-space:nowrap}
+  html.fit-screen .progress-area .tab-panel{padding:8px 12px 12px}
+  html.fit-screen .progress-area .section-heading h2{font-size:18px}
+  html.fit-screen .progress-area .section-intro{margin:3px 0 8px;font-size:10px}
+  html.fit-screen .progress-area .upgrade-card{padding:6px 8px;gap:7px}
+  html.fit-screen .progress-area .upgrade-icon{width:35px;height:35px}
+  html.fit-screen .progress-area .upgrade-icon img{width:33px;height:33px}
+  html.fit-screen .world-panel{height:auto;min-height:0;flex:1;padding:0 10px 5px}
+  html.fit-screen .world-panel .owned-heading{min-height:45px;padding:0 4px;align-items:center}
+  html.fit-screen .world-panel .owned-heading h2{font-size:15px}
+  html.fit-screen .world-panel .eyebrow{font-size:8px}
+  html.fit-screen .world-panel .owned-business-list{min-height:0;padding:5px 2px;overflow-y:auto}
+  html.fit-screen .world-panel .owned-row{min-height:70px;margin-bottom:5px;padding:6px}
+  html.fit-screen .world-panel .owned-row-head{margin-bottom:3px}
+  html.fit-screen .store-column{grid-column:auto;border-left:0;border-top:2px solid #456b4d}
+  html.fit-screen .store-top{min-height:43px;padding:5px 10px;align-items:center}
+  html.fit-screen .store-top h2{font-size:19px;margin:0}
+  html.fit-screen .store-top .eyebrow{font-size:8px}
+  html.fit-screen .buy-row{min-height:40px;padding:3px 9px;flex-wrap:nowrap}
+  html.fit-screen .buy-options{width:auto;gap:4px}
+  html.fit-screen .buy-option{min-height:32px;padding:3px 8px;font-size:11px}
+  html.fit-screen .business-list{display:block;min-height:0;max-height:none;flex:1;overflow-y:auto;padding:5px 8px 12px}
+  html.fit-screen .business-card{min-height:58px;padding:5px;margin-bottom:5px;gap:7px}
+  html.fit-screen .business-image,html.fit-screen .business-image img{width:42px;height:42px}
+  html.fit-screen .business-info strong{font-size:12px}
+  html.fit-screen .business-info p,html.fit-screen .business-owned{font-size:10px;margin-top:2px}
+  html.fit-screen .business-card button{min-height:35px;min-width:70px;padding:4px;font-size:10px}
+  html.fit-screen .site-footer{flex:none;min-height:23px;padding:4px 8px calc(4px + env(safe-area-inset-bottom));font-size:10px}
+}
+@media(max-width:600px) and (orientation:portrait){
+  html.fit-screen .columns{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,39%) minmax(0,30%) minmax(0,31%)}
+  html.fit-screen .play-column,html.fit-screen .content-column,html.fit-screen .store-column{grid-column:1}
+}
+@media(max-width:900px) and (orientation:landscape){
+  html.fit-screen .columns{display:grid;grid-template-columns:minmax(0,32%) minmax(0,35%) minmax(0,33%);grid-template-rows:minmax(0,1fr)}
+  html.fit-screen .play-column,html.fit-screen .content-column,html.fit-screen .store-column{grid-column:auto;grid-row:1}
+  html.fit-screen .play-column{border-bottom:0;border-right:2px solid #436448;padding:5px}
+  html.fit-screen .play-header h1{font-size:12px}
+  html.fit-screen .music-controls input,html.fit-screen .music-volume-value{display:none}
+  html.fit-screen .balance{font-size:clamp(18px,3vw,28px)}
+  html.fit-screen .income-line{font-size:9px}
+  html.fit-screen .play-column .money-pile{max-width:100%}
+  html.fit-screen .progress-area{flex-basis:53%}
+  html.fit-screen .progress-area .tabs{height:40px;min-height:40px}
+  html.fit-screen .progress-area .tab{min-height:38px;font-size:10px}
+  html.fit-screen .world-panel .owned-heading{min-height:40px}
+  html.fit-screen .store-column{border-top:0;border-left:2px solid #456b4d}
+  html.fit-screen .store-top{min-height:40px}
+  html.fit-screen .store-badge{display:none}
+  html.fit-screen .buy-option{padding-inline:4px;font-size:9px}
+  html.fit-screen .business-image,html.fit-screen .business-image img{width:32px;height:32px}
+  html.fit-screen .business-card{min-height:51px}
+  html.fit-screen .business-info strong{font-size:11px}
+  html.fit-screen .business-card button{min-width:58px;min-height:32px;font-size:9px}
+}
 .cloud-sync-status{display:inline-flex;align-items:center;max-width:min(310px,32vw);padding:4px 8px;border:1px solid #69a379;border-radius:8px;background:#20422f;color:#e6f4d2;font-size:clamp(10px,.75vw,12px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cloud-sync-status[hidden]{display:none}.cloud-sync-status.syncing{border-color:#c6a94d;color:#ffe5a3}.cloud-sync-status.queued{border-color:#d79a53;color:#ffe0ad}
 @media(max-width:600px){.cloud-sync-status{max-width:29vw;font-size:10px;padding:3px 5px}}
 
 .account-notice{padding:10px 18px;background:#6a3030;color:#fff;text-align:center;font-weight:700;font-size:.9rem}.account-menu a{display:block;padding:9px 12px;border-radius:5px;background:#e5d6a6;color:#243e2b;text-decoration:none;font-weight:700}.account-menu a:hover{background:#d5c184}
+
+/* Transparent reward and matching achievement art. */
+.golden-bill{display:grid;place-items:center;width:116px;height:96px;padding:0;border:0;border-radius:0;background:transparent;color:#fff3bf;box-shadow:none;filter:drop-shadow(0 0 10px #ffd064aa);transform:rotate(-9deg);animation:ticketPulse 1.2s ease-in-out infinite alternate}
+.golden-bill img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.golden-bill .golden-fallback{display:none}
+.golden-bill.asset-failed .golden-fallback{display:block;padding:8px;border:2px solid #ffe489;border-radius:8px;background:#ddab42;color:#523819;font-size:12px;font-weight:850}
+.golden-bill.asset-failed img{display:none}
+.golden-bill .event-countdown{top:auto;bottom:-9px;z-index:1;min-width:29px;text-align:center;border:1px solid #e7c16d;box-shadow:0 2px 7px #07180bb0}
+@keyframes ticketPulse{to{transform:rotate(4deg) scale(1.06);filter:drop-shadow(0 0 17px #ffe18ccc)}}
+.upgrade-icon img,.achievement-icon img{display:block;width:100%;height:100%;object-fit:contain}
+.achievement-icon{width:42px;height:42px;background:transparent}
+.achievement.locked .achievement-icon{opacity:.6}
+/* Match the upgrade strip and world header without squeezing the tab labels. */
+@media(min-width:801px){.progress-area .tabs{min-height:72px}.world-panel .owned-heading{min-height:72px;padding:8px 4px;align-items:center}}
+@media(max-width:800px){.progress-area .tabs{min-height:58px;height:58px}.world-panel .owned-heading{min-height:58px;align-items:center}}
+@media(max-width:900px){html.fit-screen .progress-area .tabs{min-height:45px;height:45px}html.fit-screen .world-panel .owned-heading{min-height:44px}}
+@media(max-width:900px) and (orientation:landscape){html.fit-screen .progress-area .tabs{min-height:40px;height:40px}html.fit-screen .world-panel .owned-heading{min-height:40px}}
+
+@media(min-width:1101px) and (max-width:1500px){.play-header .music-label{display:none}.play-header .music-controls input{width:46px}}
+@media(max-width:600px) and (orientation:portrait) and (max-height:700px){html.fit-screen .columns{grid-template-rows:minmax(0,44%) minmax(0,30%) minmax(0,26%)}}
