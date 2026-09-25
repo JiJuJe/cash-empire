@@ -411,3 +411,64 @@ h1,h2,h3,p{margin-top:0}
 .site-footer{display:flex;justify-content:center;gap:20px;padding:10px 18px;border-top:1px solid var(--line);background:#10271f;font-size:11px;font-weight:750}
 .site-footer a{color:var(--muted);text-decoration:none}
 .site-footer a:hover,.site-footer a:focus-visible{color:var(--gold);text-decoration:underline}
+
+/* Keep every progress tab readable; narrower columns scroll instead of compressing labels. */
+.progress-area .tabs{
+  display:flex;
+  flex-wrap:nowrap;
+  align-items:stretch;
+  gap:clamp(6px,.45vw,9px);
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scroll-behavior:smooth;
+  scrollbar-width:thin;
+  scrollbar-color:#7b9d78 transparent;
+  overscroll-behavior-x:contain;
+}
+.progress-area .tab{
+  display:flex;
+  flex:0 0 auto;
+  align-items:center;
+  justify-content:center;
+  min-width:max-content;
+  white-space:nowrap;
+  font-size:clamp(10px,.72vw,12px);
+  line-height:1.2;
+  letter-spacing:.045em;
+  padding-inline:clamp(7px,.5vw,9px);
+}
+.progress-area .tab:hover{background:#ffffff0b}
+.light .progress-area .tab:hover{background:#163b2c12}
+@media(max-width:600px){
+  .progress-area .tabs{min-height:47px;height:47px;padding-inline:8px;gap:7px}
+  .progress-area .tab{font-size:clamp(10px,2.65vw,11px);padding:8px 7px 6px}
+}
+
+/* Compact music controls stay beside the logo without covering the click target. */
+.brand-copy{min-width:0;flex:1 1 auto}
+.music-controls{display:flex;align-items:center;gap:5px;flex:none;padding:5px 7px;border:1px solid #b3985c99;border-radius:9px;background:#0e2a1dbb;box-shadow:0 2px 8px #071e143d}
+.music-label{color:var(--gold);font-size:9px;font-weight:850;letter-spacing:.1em}
+.music-controls button{min-width:34px;min-height:28px;padding:3px 5px;border:1px solid #d1ac5f;border-radius:5px;background:#d9b765;color:#173727;font-size:10px;font-weight:850}
+.music-controls button:hover{background:#f3d58c}
+.music-controls input{width:58px;min-width:0;height:20px;margin:0;accent-color:#e6be67;cursor:pointer}
+.music-volume-value{min-width:27px;color:#e7e9cf;font-size:10px;font-weight:750;font-variant-numeric:tabular-nums;text-align:right}
+.light .music-controls{background:#dcead6;border-color:#8d9f70}
+.light .music-volume-value{color:#28472d}
+@media(max-width:1100px){
+  .play-header{flex-wrap:wrap}
+  .music-label{display:none}
+  .music-controls{margin-left:auto}
+}
+@media(max-width:600px){
+  .play-header{flex-wrap:nowrap}
+  .play-header h1{font-size:clamp(13px,4.1vw,16px);letter-spacing:.04em;white-space:nowrap}
+  .music-controls{gap:3px;padding:3px 4px}
+  .music-controls input{width:45px}
+  .music-volume-value{min-width:24px;font-size:9px}
+  .music-controls button{min-width:29px;min-height:27px;font-size:9px}
+}
+@media(max-width:350px){
+  .play-header{flex-wrap:wrap}
+  .music-controls{margin-left:38px}
+}

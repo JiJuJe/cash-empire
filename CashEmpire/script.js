@@ -1,6 +1,7 @@
 "use strict";
 (() => {
   const SAVE_KEY = "cash-empire-save-v1";
+  const MUSIC_KEY = "cash-empire-music-v1";
   const PRICE_GROWTH = 1.15;
   const OFFLINE_CAP = 10 * 3600;
   const BUSINESS = [
@@ -77,6 +78,7 @@
   let buyAmount = "1",activeTab = "upgrades",sessionStart = Date.now(),lastTick = Date.now();
   let goldenExpires = 0,goldenNext = Date.now() + randomBillDelay(),buff = null;
   let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
+  let musicMuted = false, musicVolume = 30, musicStarted = false;
   const businessRows=new Map();
   let tooltipBusinessId=null,tickerIndex=0,tickerNext=Date.now()+11000;
   const has = id => state.upgrades.includes(id);
@@ -163,6 +165,55 @@
     state.money = Math.min(1e300,state.money+value);
     state.runEarned = Math.min(1e300,state.runEarned+value);
     state.lifetime = Math.min(1e300,state.lifetime+value);
+  }
+  function saveMusicPreferences() {
+    try { localStorage.setItem(MUSIC_KEY, JSON.stringify({muted:musicMuted,volume:musicVolume})); }
+    catch (_) { /* Music preferences can still work for this session. */ }
+  }
+  function updateMusicControls() {
+    const audio=$("backgroundMusic"),button=$("musicMute"),slider=$("musicVolume");
+    audio.volume=musicVolume/100;
+    audio.muted=musicMuted;
+    button.textContent=musicMuted?"OFF":"ON";
+    button.setAttribute("aria-pressed",String(musicMuted));
+    button.setAttribute("aria-label",musicMuted?"Unmute background music":"Mute background music");
+    slider.value=String(musicVolume);
+    $("musicVolumeValue").textContent=musicVolume+"%";
+  }
+  function startMusic() {
+    if(musicMuted||musicVolume===0)return;
+    const audio=$("backgroundMusic");
+    if(musicStarted&&!audio.paused)return;
+    const result=audio.play();
+    if(result&&typeof result.then==="function")result.then(()=>{musicStarted=true;}).catch(()=>{});
+  }
+  function setupMusic() {
+    try {
+      const saved=JSON.parse(localStorage.getItem(MUSIC_KEY)||"null");
+      if(saved&&typeof saved==="object"){
+        if(typeof saved.muted==="boolean")musicMuted=saved.muted;
+        if(Number.isFinite(saved.volume))musicVolume=Math.max(0,Math.min(100,Math.round(saved.volume)));
+      }
+    } catch (_) { /* Ignore unavailable storage or malformed music preferences. */ }
+    updateMusicControls();
+    $("musicMute").addEventListener("click",()=>{
+      musicMuted=!musicMuted;
+      updateMusicControls();saveMusicPreferences();
+      if(!musicMuted)startMusic();
+    });
+    $("musicVolume").addEventListener("input",event=>{
+      musicVolume=Number(event.target.value);
+      updateMusicControls();saveMusicPreferences();
+      startMusic();
+    });
+    const firstInteraction=event=>{
+      if(event.target instanceof Element&&event.target.closest("#musicMute"))return;
+      startMusic();
+      document.removeEventListener("pointerdown",firstInteraction,true);
+      document.removeEventListener("keydown",firstInteraction,true);
+    };
+    document.addEventListener("pointerdown",firstInteraction,true);
+    document.addEventListener("keydown",firstInteraction,true);
   }
   function playTone(frequency=660) {
     if (!state.settings.sound) return;
@@ -1050,7 +1101,7 @@
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
   }
   async function init() {
-    buildWealthArt();load();applySettings();renderTop();renderOwned();
+    setupMusic();buildWealthArt();load();applySettings();renderTop();renderOwned();
     await refreshPremiumStatus();
     if(!applyOffline())await refreshAccount();
     pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
