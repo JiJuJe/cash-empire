@@ -179,7 +179,7 @@ test("heartbeats count visible active time only and roll a drop after ten minute
   assert.equal(state.totalPlaytimeMs,30000);
   testing.heartbeatState(state,130001,false,()=>.9);
   testing.heartbeatState(state,800000,true,()=>.9);
-  assert.equal(state.totalPlaytimeMs,30000);
+  assert.equal(state.totalPlaytimeMs,30001);
   state.totalPlaytimeMs=590000;
   testing.heartbeatState(state,830000,true,()=>0);
   assert.equal(state.totalPlaytimeMs,620000);
@@ -215,6 +215,7 @@ test("additive migration retains an existing account and progress",()=>{
   db.prepare("INSERT INTO users(id,username,created_at_ms) VALUES('old','OldPlayer',1)").run();
   db.prepare("INSERT INTO progress(user_id,balance,lifetime_cash,last_accrual_ms) VALUES('old',1234,5678,1)").run();
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
   const row=db.prepare("SELECT * FROM progress WHERE user_id='old'").get();
   assert.equal(row.balance,1234);assert.equal(row.lifetime_cash,5678);
   assert.equal(row.playtime_ms,0);assert.equal(row.booster_slots_unlocked,1);

@@ -53,7 +53,7 @@ function loadProgress(row){
     pendingDropUntilMs:Math.max(0,Number(row.pending_drop_until_ms)||0),rushUntilMs:Math.max(0,Number(row.rush_until_ms)||0),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
-    version:row.version
+    clickStreams:decodeJson(row.click_streams_json||"{}",{}),version:row.version
   };
 }
 function normalizeExtras(s){
@@ -66,6 +66,7 @@ function normalizeExtras(s){
   s.boosterInventory=s.boosterInventory&&typeof s.boosterInventory==="object"?s.boosterInventory:{};
   s.equipped=Array.isArray(s.equipped)?s.equipped.slice(0,6):[];
   s.premiumSlots=Array.isArray(s.premiumSlots)?s.premiumSlots:[];
+  s.clickStreams=s.clickStreams&&typeof s.clickStreams==="object"&&!Array.isArray(s.clickStreams)?s.clickStreams:{};
   return s;
 }
 function bonus(s,type){return boosterBonus(s,type);}
@@ -112,10 +113,10 @@ function advance(s,now,entitled){
 }
 function heartbeatState(s,now,active,random=Math.random){
   normalizeExtras(s);
-  if(!active){s.lastHeartbeatMs=0;return;}
   const elapsed=now-s.lastHeartbeatMs;
-  if(s.lastHeartbeatMs&&elapsed>0&&elapsed<=45000)s.totalPlaytimeMs+=Math.min(elapsed,35000);
-  s.lastHeartbeatMs=now;
+  if(s.lastHeartbeatMs&&elapsed>0&&elapsed<=95000)s.totalPlaytimeMs+=Math.min(elapsed,65000);
+  s.lastHeartbeatMs=active?now:0;
+  if(!active)return;
   if(s.pendingDropUntilMs&&now>=s.pendingDropUntilMs)s.pendingDropUntilMs=0;
   if(s.totalPlaytimeMs>=s.nextDropPlaytimeMs){
     s.nextDropPlaytimeMs+=DROP_INTERVAL_MS;
@@ -136,10 +137,13 @@ function upgradeFor(s,id){
   return null;
 }
 const CLICK_BATCH_TECHNICAL_MAX=1000;
-function applyAction(current,action,now,entitled,random=Math.random){
+function applyAction(current,action,now,entitled,random=Math.random,checkpointClicks=0){
   const s=normalizeExtras(structuredClone(current));
   advance(s,now,entitled);
-  if(action.type==="click_batch"){
+  if(checkpointClicks){award(s,clickRate(s,entitled)*checkpointClicks*(s.rushUntilMs>now?7:1));s.totalClicks+=checkpointClicks;}
+  if(action.type==="click_checkpoint"){
+    // The cumulative stream receipt lives in this same progress row.
+  }else if(action.type==="click_batch"){
     const count=action.count;
     if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_TECHNICAL_MAX)
       throw Error("Invalid click batch.");
@@ -210,11 +214,11 @@ function sameOrigin(request){
   const origin=request.headers.get("Origin");
   if(origin!==new URL(request.url).origin)fail(403,"Invalid request origin.");
 }
-async function readBody(request,allowed){
+async function readBody(request,allowed,maxLength=4096){
   if(!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json"))fail(415,"JSON required.");
-  if(Number(request.headers.get("Content-Length")||0)>4096)fail(413,"Request too large.");
+  if(Number(request.headers.get("Content-Length")||0)>maxLength)fail(413,"Request too large.");
   const raw=await request.text();
-  if(raw.length>4096)fail(413,"Request too large.");
+  if(raw.length>maxLength)fail(413,"Request too large.");
   let body;
   try{body=JSON.parse(raw);}catch(_){fail(400,"Malformed JSON.");}
   if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowed.includes(key)))fail(400,"Unexpected fields.");
@@ -229,6 +233,16 @@ async function rateLimit(env,request,route,max,windowMs=60000){
     window_start_ms=excluded.window_start_ms`).bind(key,start).run();
   const row=await env.DB.prepare("SELECT count FROM api_rate_limits WHERE key=?").bind(key).first();
   if(row.count>max)fail(429,"Too many requests. Try again shortly.");
+}
+async function infrastructureLimit(env,request,route,max=1200){
+  if(env.GAME_API_LIMITER){
+    const identity=request.headers.get("CF-Connecting-IP")||"unknown";
+    const result=await env.GAME_API_LIMITER.limit({key:route+":"+identity});
+    if(!result.success)fail(429,"Too many requests. Try again shortly.");
+    return;
+  }
+  // Keep the D1 protection if an older deployment lacks the binding.
+  await rateLimit(env,request,route,max);
 }
 async function hmac(secret,message){
   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
@@ -250,6 +264,8 @@ async function hasDoubleMoney(env,userId){
   return Boolean(row);
 }
 async function ensureProgress(env,userId,now){
+  let row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(userId).first();
+  if(row)return row;
   await env.DB.prepare("INSERT OR IGNORE INTO progress(user_id,last_accrual_ms) VALUES(?,?)").bind(userId,now).run();
   return env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(userId).first();
 }
@@ -266,7 +282,7 @@ function leaderboardEntry(row,userId){
   return {rank:Number(row.rank),username:sanitizeUsername(row.username)||"Player",lifetimeCash:capped(row.lifetime_cash),rebirths:Math.max(0,Number(row.rebirths)||0),isSelf:row.id===userId};
 }
 async function getLeaderboard(request,env,user){
-  await rateLimit(env,request,"leaderboard:"+(user?.id||"guest"),120);
+  await infrastructureLimit(env,request,"leaderboard:"+(user?.id||"guest"));
   const now=Date.now();
   const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=30 ORDER BY rank").bind(now,now).all();
   const players=(top.results||[]).map(row=>leaderboardEntry(row,user?.id));
@@ -292,74 +308,129 @@ function updateStatement(env,s,oldVersion,entitled){
     total_clicks=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
     businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
-    pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,version=version+1 WHERE user_id=? AND version=?`).bind(
+    pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
       s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
-      (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),s.userId,oldVersion
+      (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),s.userId,oldVersion
     );
 }
 async function premiumSlots(env,userId){
   const rows=await env.DB.prepare("SELECT slot_number FROM booster_slot_entitlements WHERE user_id=?").bind(userId).all();
   return (rows.results||[]).map(row=>Number(row.slot_number)).filter(slot=>slot===5||slot===6);
 }
+function initialProgress(userId,now){
+  return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
+    totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
+    pendingDropUntilMs:0,rushUntilMs:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
+    upgrades:[],prestige:[],clickStreams:{},version:0});
+}
 async function getProgress(env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
+  const now=Date.now(),row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(user.id).first();
   const entitled=await hasDoubleMoney(env,user.id);
-  for(let attempt=0;attempt<3;attempt++){
-    const row=await ensureProgress(env,user.id,Date.now());
-    const s=normalizeExtras(loadProgress(row)),version=s.version;
-    s.premiumSlots=await premiumSlots(env,user.id);
-    advance(s,Date.now(),entitled);
-    const updated=await updateStatement(env,s,version,entitled).run();
-    if(updated.meta?.changes===1)return json(progressSummary(s,entitled));
+  const s=row?normalizeExtras(loadProgress(row)):initialProgress(user.id,now);
+  s.premiumSlots=await premiumSlots(env,user.id);
+  advance(s,now,entitled); // Virtual accrual: GET never mutates D1.
+  return json(progressSummary(s,entitled));
+}
+const STREAM_ID=/^[A-Za-z0-9_-]{12,80}$/;
+async function applyCheckpoints(env,userId,s,checkpoints){
+  if(checkpoints===undefined)return {credits:0,advanced:false};
+  if(!Array.isArray(checkpoints)||checkpoints.length<1||checkpoints.length>2)fail(400,"Invalid click checkpoint.");
+  let credits=0,advanced=false;
+  for(const part of checkpoints){
+    if(!part||typeof part!=="object"||Array.isArray(part)||Object.keys(part).some(k=>!["streamId","total","legacy"].includes(k))||
+      !STREAM_ID.test(part.streamId)||!Number.isSafeInteger(part.total)||part.total<1)fail(400,"Invalid click checkpoint.");
+    const previous=Number(s.clickStreams[part.streamId])||0;
+    if(part.total<=previous)continue;
+    const increment=part.total-previous;
+    if(increment>1000000)fail(400,"Click checkpoint exceeds the technical maximum.");
+    let count=increment;
+    if(part.legacy!==undefined){
+      if(!Array.isArray(part.legacy)||part.legacy.length<1||part.legacy.length>1000)fail(400,"Invalid legacy click checkpoint.");
+      const ids=new Set();let requested=0;
+      for(const entry of part.legacy){
+        if(!entry||typeof entry!=="object"||Array.isArray(entry)||Object.keys(entry).some(k=>!["id","count"].includes(k))||
+          !STREAM_ID.test(entry.id)||ids.has(entry.id)||!Number.isInteger(entry.count)||entry.count<1||entry.count>1000)
+          fail(400,"Invalid legacy click checkpoint.");
+        ids.add(entry.id);requested+=entry.count;
+      }
+      if(requested!==increment)fail(409,"Legacy click checkpoints must be replayed in order.");
+      count=0;
+      for(let offset=0;offset<part.legacy.length;offset+=100){
+        const slice=part.legacy.slice(offset,offset+100),names=slice.map(x=>x.id);
+        const sql="SELECT action_id,user_id,action_type FROM progress_actions WHERE action_id IN ("+names.map(()=>"?").join(",")+")";
+        const rows=await env.DB.prepare(sql).bind(...names).all();
+        const already=new Map((rows.results||[]).map(row=>[row.action_id,row]));
+        for(const entry of slice){
+          const prior=already.get(entry.id);
+          if(prior&&prior.user_id!==userId)fail(409,"Click action belongs to another account.");
+          if(prior&&prior.action_type!=="click_batch")fail(409,"Click action ID conflict.");
+          if(!prior)count+=entry.count;
+        }
+      }
+    }
+    credits+=count;s.clickStreams[part.streamId]=part.total;advanced=true;
   }
-  fail(409,"Progress changed. Retry.");
+  return {credits,advanced};
 }
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId"]);
-  if(typeof action.actionId!=="string"||!/^[A-Za-z0-9_-]{12,80}$/.test(action.actionId))fail(400,"Invalid action ID.");
-  const allowed={click_batch:["actionId","type","count"],golden:["actionId","type"],buy_business:["actionId","type","businessId","quantity"],buy_upgrade:["actionId","type","upgradeId"],buy_prestige:["actionId","type","upgradeId"],rebirth:["actionId","type"],unlock_slot:["actionId","type","slot"],equip_booster:["actionId","type","slot","boosterId"],unequip_booster:["actionId","type","slot"],claim_booster_drop:["actionId","type"]};
-  if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key)))fail(400,"Invalid action.");
-  const bucket=action.type==="click_batch"?"progress-click:"+user.id:
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId","clicks"],100000);
+  const checkpointOnly=action.type==="click_checkpoint";
+  if(!checkpointOnly&&(typeof action.actionId!=="string"||!STREAM_ID.test(action.actionId)))fail(400,"Invalid action ID.");
+  const allowed={click_checkpoint:["type","clicks"],click_batch:["actionId","type","count"],golden:["actionId","type","clicks"],
+    buy_business:["actionId","type","businessId","quantity","clicks"],buy_upgrade:["actionId","type","upgradeId","clicks"],
+    buy_prestige:["actionId","type","upgradeId","clicks"],rebirth:["actionId","type","clicks"],
+    unlock_slot:["actionId","type","slot","clicks"],equip_booster:["actionId","type","slot","boosterId","clicks"],
+    unequip_booster:["actionId","type","slot","clicks"],claim_booster_drop:["actionId","type","clicks"]};
+  if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key))||
+    (checkpointOnly&&!action.clicks))fail(400,"Invalid action.");
+  const bucket=checkpointOnly||action.type==="click_batch"?"progress-click:"+user.id:
     action.type==="buy_business"||action.type==="buy_upgrade"||action.type==="buy_prestige"||action.type==="unlock_slot"?"progress-purchase:"+user.id:
     "progress-special:"+user.id;
-  await rateLimit(env,request,"progress-all:"+user.id,10000);
-  await rateLimit(env,request,bucket,action.type==="click_batch"?6000:bucket.startsWith("progress-purchase:")?300:60);
-  const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(action.actionId).first();
-  if(prior){
-    if(prior.user_id!==user.id||prior.action_type!==action.type)fail(409,"Action ID conflict.");
-    return getProgress(env,user);
-  }
+  await infrastructureLimit(env,request,bucket);
   const entitled=await hasDoubleMoney(env,user.id);
-  const now=Date.now(),row=await ensureProgress(env,user.id,now),current=normalizeExtras(loadProgress(row));
-  current.premiumSlots=await premiumSlots(env,user.id);
-  let next;
-  try{next=applyAction(current,action,now,entitled);}catch(error){fail(400,error.message);}
-  try {
-    const result=await env.DB.batch([
-      updateStatement(env,next,current.version,entitled),
-      env.DB.prepare(`INSERT INTO progress_actions(action_id,user_id,action_type,created_at_ms)
-        SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM progress WHERE user_id=? AND version=?)`)
-        .bind(action.actionId,user.id,action.type,now,user.id,current.version+1)
-    ]);
-    if(result[0].meta?.changes!==1)fail(409,"Progress changed. Retry.");
-  } catch(error) {
-    if(error instanceof ApiError)throw error;
-    fail(409,"Duplicate or conflicting action.");
+  for(let attempt=0;attempt<5;attempt++){
+    if(!checkpointOnly){
+      const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(action.actionId).first();
+      if(prior){
+        if(prior.user_id!==user.id||prior.action_type!==action.type)fail(409,"Action ID conflict.");
+        return getProgress(env,user);
+      }
+    }
+    const now=Date.now(),row=await ensureProgress(env,user.id,now),current=normalizeExtras(loadProgress(row));
+    current.premiumSlots=await premiumSlots(env,user.id);
+    const checkpoint=await applyCheckpoints(env,user.id,current,action.clicks);
+    if(checkpointOnly&&!checkpoint.advanced)return getProgress(env,user);
+    let next;
+    try{next=applyAction(current,action,now,entitled,Math.random,checkpoint.credits);}catch(error){fail(400,error.message);}
+    try{
+      if(checkpointOnly){
+        const result=await updateStatement(env,next,current.version,entitled).run();
+        if(result.meta?.changes===1)return json(progressSummary(next,entitled));
+      }else{
+        const result=await env.DB.batch([
+          updateStatement(env,next,current.version,entitled),
+          env.DB.prepare("INSERT INTO progress_actions(action_id,user_id,action_type,created_at_ms) SELECT ?,?,?,? WHERE changes()=1 AND EXISTS(SELECT 1 FROM progress WHERE user_id=? AND version=?)")
+            .bind(action.actionId,user.id,action.type,now,user.id,current.version+1)
+        ]);
+        if(result[0].meta?.changes===1&&result[1].meta?.changes===1)return json(progressSummary(next,entitled));
+      }
+    }catch(error){if(error instanceof ApiError)throw error;}
   }
-  return json(progressSummary(next,entitled));
+  fail(409,"Progress changed. Retry.");
 }
 async function postHeartbeat(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
   const body=await readBody(request,["active"]);
   if(typeof body.active!=="boolean")fail(400,"Invalid heartbeat.");
-  await rateLimit(env,request,"heartbeat:"+user.id,120);
+  await infrastructureLimit(env,request,"heartbeat:"+user.id);
   const entitled=await hasDoubleMoney(env,user.id);
   for(let attempt=0;attempt<3;attempt++){
     const now=Date.now(),row=await ensureProgress(env,user.id,now);
@@ -385,7 +456,7 @@ function paymentsConfigured(env){
   return Boolean(env.DB&&env.STRIPE_SECRET_KEY&&env.STRIPE_WEBHOOK_SECRET&&env.PUBLIC_SITE_URL);
 }
 async function storeStatus(request,env,user){
-  if(env.DB)await rateLimit(env,request,"store-status:"+(user?.id||"guest"),120);
+  if(env.DB)await infrastructureLimit(env,request,"store-status:"+(user?.id||"guest"));
   const owned=user?await hasDoubleMoney(env,user.id):false;
   return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements:{double_money:owned}});
 }

@@ -107,9 +107,10 @@
   let premiumMultiplier = 1;
   let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false};
   let account={authenticated:false,username:null,needsUsername:false};
-  const CLOUD_BATCH_SIZE=1000,CLOUD_FLUSH_MS=1500,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v2:",LEGACY_CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",LEGACY_CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:";
+  const CLOUD_FLUSH_MS=180000,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v3:",OLD_OUTBOX_V2="cash-empire-cloud-outbox-v2:",LEGACY_CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",LEGACY_CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:",CLOUD_STREAM_PREFIX="cash-empire-click-stream-v3:",CLOUD_ACCOUNT_CACHE="cash-empire-cloud-account-v1";
   let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[];
-  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0,cloudRetryStoppedAt=0,cloudSyncRequested=false;
+  let cloudClickStream={id:"",total:0,acked:0},cloudClickDue=false,cloudUnavailable=false,cloudServerBalance=0;
+  let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0;
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
@@ -164,12 +165,18 @@
     }
     return low;
   }
+  function estimatedAvailableMoney(){
+    if(!cloudMode)return state.money;
+    const legacy=cloudOutbox.reduce((sum,op)=>sum+(op.type==="legacy_clicks"?op.entries.reduce((n,x)=>n+x.count,0):0),0);
+    const pending=legacy+Math.max(0,cloudClickStream.total-cloudClickStream.acked)+pendingClicks;
+    return Math.max(state.money,cloudServerBalance+Math.min(1e300,pending*clickValue()));
+  }
   function selectedQuantity(b) {
-    const max = maxAffordable(b,state.businesses[b.id],state.money);
+    const max = maxAffordable(b,state.businesses[b.id],estimatedAvailableMoney());
     return buyAmount === "max" ? (cloudMode?Math.min(max,100):max) : (Number(buyAmount) <= max ? Number(buyAmount) : 0);
   }
   function displayedQuantity(b) {
-    return buyAmount === "max" ? (cloudMode?Math.min(100,maxAffordable(b,state.businesses[b.id],state.money)):maxAffordable(b,state.businesses[b.id],state.money)) : Number(buyAmount);
+    return buyAmount === "max" ? (cloudMode?Math.min(100,maxAffordable(b,state.businesses[b.id],estimatedAvailableMoney())):maxAffordable(b,state.businesses[b.id],estimatedAvailableMoney())) : Number(buyAmount);
   }
   function prestigeBonus() {
     return 1 + state.empireTotal * (hasPrestige("compound") ? .015 : .01);
@@ -465,14 +472,14 @@
     list.replaceChildren();
     if(!upgrades.length){const empty=document.createElement("div");empty.className="empty-state";empty.textContent="Keep earning. Your next upgrade is on its way.";list.append(empty);return;}
     for(const u of upgrades) {
-      const card=document.createElement("div");card.className="upgrade-card"+(state.money>=u.cost?" affordable":"");
+      const card=document.createElement("div");card.className="upgrade-card"+(estimatedAvailableMoney()>=u.cost?" affordable":"");
       const icon=document.createElement("div");icon.className="upgrade-icon";
       if(u.image){const art=document.createElement("img");art.src=u.image;art.alt="";art.width=39;art.height=39;icon.append(art);}else icon.textContent=u.icon;
       const info=document.createElement("div");info.className="upgrade-info";
       const title=document.createElement("strong");title.textContent=u.name;
       const desc=document.createElement("p");desc.textContent=u.description;
       info.append(title,desc);
-      card.append(icon,info,makeButton(euro(u.cost),state.money<u.cost,()=>buyUpgrade(u)));
+      card.append(icon,info,makeButton(euro(u.cost),estimatedAvailableMoney()<u.cost,()=>buyUpgrade(u)));
       list.append(card);
     }
   }
@@ -712,7 +719,7 @@
   }
   async function apiJson(path,options={}) {
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),3500);
+    const timeout=setTimeout(()=>controller.abort(),path==="/api/progress/action"?12000:6000);
     try {
       const response=await fetch(path,{credentials:"same-origin",cache:"no-store",...options,signal:controller.signal});
       let data;
@@ -831,17 +838,23 @@
     $("accountUsername").textContent=account.username||"Choose username";
   }
   async function refreshAccount(){
-    try{
-      const data=await apiJson("/api/account");
-      account={authenticated:data.authenticated===true,username:typeof data.username==="string"?data.username:null,needsUsername:data.needsUsername===true};
-    }catch(_){account={authenticated:false,username:null,needsUsername:false};}
+    let data;try{data=await apiJson("/api/account");}
+    catch(_){
+      if(localStorage.getItem(CLOUD_CHOICE)==="cloud"){
+        cloudMode=true;account={authenticated:false,username:localStorage.getItem(CLOUD_ACCOUNT_CACHE),needsUsername:false};
+        if(account.username){restoreCloudOutbox();loadCloudStream();}cloudUnavailable=true;renderCloudStatus();scheduleCloudRetry();
+      }else account={authenticated:false,username:null,needsUsername:false};
+      renderAccountControls();return;
+    }
+    if(cloudMode&&account.username&&data.authenticated===true&&data.username&&data.username!==account.username)stagePendingClicks();
+    account={authenticated:data.authenticated===true,username:typeof data.username==="string"?data.username:localStorage.getItem(CLOUD_ACCOUNT_CACHE),needsUsername:data.needsUsername===true};
     renderAccountControls();
     if(account.needsUsername)showUsernamePrompt();
     else if(account.authenticated){
       const choice=localStorage.getItem(CLOUD_CHOICE);
       if(choice==="cloud"||(!choice&&state.lifetime===0&&state.money===0))await activateCloud(false);
       else if(!choice)offerCloudChoice();
-    }
+    }else if(localStorage.getItem(CLOUD_CHOICE)==="cloud"){cloudMode=true;cloudUnavailable=true;renderCloudStatus();}
   }
   function showUsernamePrompt(){
     const wrap=featureElement("div","username-form");
@@ -885,7 +898,8 @@
   }
   function applyCloudSnapshot(data,reset=false){
     if(reset){const settings=state.settings,achievements=state.achievements;state=defaultState();state.settings=settings;state.achievements=achievements;}
-    state.money=safeNumber(data.balance);
+    cloudServerBalance=safeNumber(data.balance);
+    state.money=cloudServerBalance;
     state.lifetime=safeNumber(data.lifetimeCash);
     state.runEarned=safeNumber(data.runEarned);
     state.rebirths=safeNumber(data.rebirths);
@@ -914,134 +928,163 @@
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
   }
   function cloudOutboxKey(){return CLOUD_OUTBOX_PREFIX+(account.username||"unknown");}
-  function legacyCloudOutboxKey(){return LEGACY_CLOUD_OUTBOX_PREFIX+(account.username||"unknown");}
-  function legacyCloudLastBatchKey(){return LEGACY_CLOUD_LAST_BATCH_PREFIX+(account.username||"unknown");}
+  function cloudStreamKey(){return CLOUD_STREAM_PREFIX+(account.username||"unknown");}
+  function oldOutboxKey(prefix){return prefix+(account.username||"unknown");}
+  function cloudPending(){return pendingClicks>0||cloudClickStream.total>cloudClickStream.acked||cloudOutbox.length>0;}
+  function renderCloudStatus(){
+    const el=$("cloudSyncStatus");el.hidden=!cloudMode;if(!cloudMode)return;
+    el.className="cloud-sync-status"+(cloudUnavailable?" queued":cloudBusy||cloudPending()?" syncing":"");
+    el.textContent=cloudUnavailable?"Cloud temporarily unavailable — progress queued locally":cloudBusy||cloudPending()?"Syncing...":"Synced";
+    el.title=el.textContent;
+  }
   function persistCloudOutbox(){
+    try{localStorage.setItem(cloudOutboxKey(),JSON.stringify(cloudOutbox));renderCloudStatus();return true;}
+    catch(_){cloudUnavailable=true;renderCloudStatus();toast("Browser storage is unavailable. Cloud actions cannot be safely queued.");return false;}
+  }
+  function loadCloudStream(){
     try{
-      if(cloudOutbox.length)localStorage.setItem(cloudOutboxKey(),JSON.stringify(cloudOutbox));
-      else localStorage.removeItem(cloudOutboxKey());
-    }catch(_){toast("Browser storage is unavailable. Cloud actions may not survive closing this tab.");}
+      const raw=localStorage.getItem(cloudStreamKey());
+      if(raw){const value=JSON.parse(raw);if(!value||!/^[A-Za-z0-9_-]{12,80}$/.test(value.id)||!Number.isSafeInteger(value.total)||!Number.isSafeInteger(value.acked)||value.acked>value.total)throw Error("Invalid click stream");cloudClickStream=value;}
+      else {cloudClickStream={id:crypto.randomUUID(),total:0,acked:0};localStorage.setItem(cloudStreamKey(),JSON.stringify(cloudClickStream));}
+      return true;
+    }catch(_){cloudUnavailable=true;renderCloudStatus();toast("Saved cloud clicks need recovery. Your browser data was kept.");return false;}
+  }
+  function persistCloudStream(){
+    try{localStorage.setItem(cloudStreamKey(),JSON.stringify(cloudClickStream));renderCloudStatus();return true;}
+    catch(_){cloudUnavailable=true;renderCloudStatus();toast("Browser storage is unavailable. Cloud clicks remain in this tab.");return false;}
   }
   function restoreCloudOutbox(){
     try{
-      const current=localStorage.getItem(cloudOutboxKey());
-      const legacy=localStorage.getItem(legacyCloudOutboxKey());
-      const parse=text=>{try{return JSON.parse(text||"[]");}catch(_){return [];}};
-      const currentActions=parse(current),legacyActions=parse(legacy);
-      const saved=[...(Array.isArray(currentActions)?currentActions:[]),
-        ...(Array.isArray(legacyActions)?legacyActions.filter(op=>op?.type!=="click_batch"):[])];
-      const seen=new Set();
-      cloudOutbox=saved.filter(op=>op&&typeof op==="object"&&
-        /^[A-Za-z0-9_-]{12,80}$/.test(op.actionId)&&!seen.has(op.actionId)&&
-        ["click_batch","golden","buy_business","buy_upgrade","buy_prestige","rebirth","unlock_slot","equip_booster","unequip_booster","claim_booster_drop"].includes(op.type)&&
-        (op.type!=="click_batch"||Number.isInteger(op.count)&&op.count>=1&&op.count<=CLOUD_BATCH_SIZE)&&
-        (seen.add(op.actionId),true));
-      // Write safe actions first; only then remove obsolete click queues and pacing data.
-      if(cloudOutbox.length)localStorage.setItem(cloudOutboxKey(),JSON.stringify(cloudOutbox));
-      else localStorage.removeItem(cloudOutboxKey());
-      localStorage.removeItem(legacyCloudOutboxKey());
-      localStorage.removeItem(legacyCloudLastBatchKey());
-    }catch(_){cloudOutbox=[];}
+      const migrated=localStorage.getItem(cloudOutboxKey());
+      if(migrated!==null){const actions=JSON.parse(migrated);if(!Array.isArray(actions))throw Error("Invalid migrated queue");cloudOutbox=actions;return true;}
+      const read=key=>{const raw=localStorage.getItem(key);if(raw===null)return [];const parsed=JSON.parse(raw);if(!Array.isArray(parsed))throw Error("Invalid old queue");return parsed;};
+      const oldest=read(oldOutboxKey(LEGACY_CLOUD_OUTBOX_PREFIX));
+      const newer=read(oldOutboxKey(OLD_OUTBOX_V2));
+      const compact=window.ClickTheCashQueue.compactLegacy([...oldest,...newer]);
+      // Commit the complete compact queue before removing either old copy.
+      localStorage.setItem(cloudOutboxKey(),JSON.stringify(compact));
+      cloudOutbox=compact;
+      localStorage.removeItem(oldOutboxKey(LEGACY_CLOUD_OUTBOX_PREFIX));
+      localStorage.removeItem(oldOutboxKey(OLD_OUTBOX_V2));
+      localStorage.removeItem(oldOutboxKey(LEGACY_CLOUD_LAST_BATCH_PREFIX));
+      return true;
+    }catch(_){cloudUnavailable=true;renderCloudStatus();toast("Old cloud actions were kept in your browser. Sync will resume after recovery.");return false;}
   }
   function stagePendingClicks(){
-    clearTimeout(cloudClickTimer);cloudClickTimer=0;
-    if(!cloudMode||pendingClicks<=0)return;
-    while(pendingClicks>0){
-      const count=Math.min(CLOUD_BATCH_SIZE,pendingClicks);
-      cloudOutbox.push({actionId:crypto.randomUUID(),type:"click_batch",count});
-      pendingClicks-=count;
-    }
-    persistCloudOutbox();
+    if(!cloudMode||pendingClicks<=0)return true;
+    const previous=cloudClickStream.total,next=previous+pendingClicks;
+    if(!Number.isSafeInteger(next)){cloudUnavailable=true;renderCloudStatus();return false;}
+    cloudClickStream.total=next;
+    if(!persistCloudStream()){cloudClickStream.total=previous;return false;}
+    pendingClicks=0;return true;
   }
   function scheduleClickFlush(){
     if(cloudClickTimer||!cloudMode)return;
-    cloudClickTimer=setTimeout(()=>{
-      stagePendingClicks();
-      if(cloudRetryStoppedAt&&Date.now()-cloudRetryStoppedAt>=15000){cloudRetryStoppedAt=0;cloudRetryCount=0;}
-      startCloudDrain();
-    },CLOUD_FLUSH_MS);
+    const rush=buff&&buff.type==="goldrush"&&buff.until>Date.now();
+    cloudClickTimer=setTimeout(()=>{cloudClickTimer=0;if(!stagePendingClicks())return;cloudClickDue=true;startCloudDrain();},rush?5000:CLOUD_FLUSH_MS);
   }
   async function activateCloud(backup){
-    if(!account.authenticated||account.needsUsername||cloudMode)return;
+    if(!account.authenticated||account.needsUsername)return;
+    if(backup&&!localStorage.getItem(LOCAL_BACKUP))localStorage.setItem(LOCAL_BACKUP,JSON.stringify(state));
+    localStorage.setItem(CLOUD_CHOICE,"cloud");localStorage.setItem(CLOUD_ACCOUNT_CACHE,account.username);
+    cloudMode=true;renderCloudStatus();
+    const queueReady=restoreCloudOutbox(),streamReady=loadCloudStream();
+    if(!queueReady||!streamReady)return;
     try{
-      if(backup&&!localStorage.getItem(LOCAL_BACKUP))localStorage.setItem(LOCAL_BACKUP,JSON.stringify(state));
       const data=await apiJson("/api/progress/snapshot");
-      cloudMode=true;pendingClicks=0;buff=null;goldenExpires=0;$("goldenBill").hidden=true;applySettings();localStorage.setItem(CLOUD_CHOICE,"cloud");
-      applyCloudSnapshot(data,true);restoreCloudOutbox();startCloudDrain();lastHeartbeatSent=0;sendHeartbeat(true);toast("Verified cloud run active");
-    }catch(error){toast(error.message||"Cloud progress unavailable.");}
+      buff=null;goldenExpires=0;$("goldenBill").hidden=true;
+      applyCloudSnapshot(data,true);
+      cloudUnavailable=false;cloudClickDue=cloudClickStream.total>cloudClickStream.acked;renderCloudStatus();startCloudDrain();lastHeartbeatSent=0;sendHeartbeat(true);
+      toast("Verified cloud run active");
+    }catch(_){cloudUnavailable=true;renderCloudStatus();toast("Cloud temporarily unavailable. Your progress is queued locally.");scheduleCloudRetry();}
   }
   async function postCloudAction(action){
     return apiJson("/api/progress/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(action)});
   }
   async function resyncCloud(){
     if(!cloudMode)return;
-    try{const data=await apiJson("/api/progress/snapshot");if(cloudMode)applyCloudSnapshot(data);}
-    catch(_){/* The next successful action or scheduled sync will refresh the view. */}
+    try{const data=await apiJson("/api/progress/snapshot");if(cloudMode)applyCloudSnapshot(data);cloudUnavailable=false;renderCloudStatus();}
+    catch(_){cloudUnavailable=true;renderCloudStatus();}
+  }
+  function scheduleCloudRetry(){
+    if(cloudRetryTimer||!cloudMode)return;
+    cloudRetryCount=Math.min(cloudRetryCount+1,9);
+    const delay=Math.min(300000,2000*Math.pow(2,cloudRetryCount-1));
+    cloudRetryTimer=setTimeout(()=>{cloudRetryTimer=0;if(!account.authenticated)refreshAccount();else startCloudDrain();},delay);
+    cloudUnavailable=true;renderCloudStatus();
+  }
+  function acknowledgeClickTotal(total){
+    if(total>cloudClickStream.acked){cloudClickStream.acked=total;persistCloudStream();}
   }
   function startCloudDrain(){
-    if(!cloudMode||cloudBusy||cloudRetryTimer||cloudRetryStoppedAt)return cloudQueue;
-    cloudBusy=true;
+    if(!cloudMode||!account.authenticated||cloudBusy||cloudRetryTimer)return cloudQueue;
+    cloudBusy=true;renderCloudStatus();
     cloudQueue=(async()=>{
-      while(cloudMode&&cloudOutbox.length){
-        const action=cloudOutbox[0];
+      while(cloudMode){
+        if(!stagePendingClicks())break;
+        let plan=window.ClickTheCashQueue.planNext(cloudOutbox,cloudClickStream);
+        let request,consume=0,acked=0;
+        if(plan){
+          request=plan.request;consume=plan.consume;acked=plan.ackedTotal;
+          if(acked-cloudClickStream.acked>1000000){
+            const legacy=request.clicks?.find(part=>part.legacy);
+            if(legacy){request={type:"click_checkpoint",clicks:[legacy]};consume=1;acked=0;}
+            else {request={type:"click_checkpoint",clicks:[{streamId:cloudClickStream.id,total:cloudClickStream.acked+1000000}]};consume=0;acked=request.clicks[0].total;}
+          }
+        }else if(cloudClickDue&&cloudClickStream.total>cloudClickStream.acked){
+          acked=Math.min(cloudClickStream.total,cloudClickStream.acked+1000000);
+          request={type:"click_checkpoint",clicks:[{streamId:cloudClickStream.id,total:acked}]};
+        }else break;
         try{
-          const data=await postCloudAction(action);
-          cloudOutbox.shift();persistCloudOutbox();
+          const data=await postCloudAction(request);
+          acknowledgeClickTotal(acked);
+          if(consume){cloudOutbox.splice(0,consume);persistCloudOutbox();}
+          if(request.type==="click_checkpoint"&&cloudClickStream.total<=cloudClickStream.acked)cloudClickDue=false;
           if(cloudMode)applyCloudSnapshot(data);
-          cloudRetryCount=0;cloudRetryStoppedAt=0;lastCloudSync=Date.now();
+          cloudRetryCount=0;cloudUnavailable=false;lastCloudSync=Date.now();renderCloudStatus();
         }catch(error){
-          if(error.status>=400&&error.status<500&&error.status!==409&&error.status!==429){
-            cloudOutbox.shift();
-            if(action.type==="click_batch"){
-              cloudOutbox=cloudOutbox.filter(op=>op.type!=="click_batch");
-              pendingClicks=0;clearTimeout(cloudClickTimer);cloudClickTimer=0;
-            }
-            persistCloudOutbox();await resyncCloud();
-            toast(error.message||"Cloud action was rejected. Progress was refreshed.");
-            cloudRetryCount=0;cloudRetryStoppedAt=0;lastCloudSync=Date.now();
-            continue;
+          const permanent=error.status===400||error.status===422;
+          if(permanent&&request.type!=="click_checkpoint"&&request.clicks?.length){
+            try{
+              const data=await postCloudAction({type:"click_checkpoint",clicks:request.clicks});
+              acknowledgeClickTotal(acked);
+              if(plan&&cloudOutbox[0]?.type==="legacy_clicks"){cloudOutbox.shift();persistCloudOutbox();}
+              if(cloudMode)applyCloudSnapshot(data);
+              continue; // Retry the important action after preserving all valid clicks.
+            }catch(_){scheduleCloudRetry();break;}
           }
-          cloudRetryCount++;
-          if(cloudRetryCount>=6){
-            cloudRetryStoppedAt=Date.now();
-            toast("Cloud sync paused. Your actions are saved in this browser and will retry when you reconnect.");
-          }else{
-            const delay=Math.min(15000,500*Math.pow(2,cloudRetryCount));
-            cloudRetryTimer=setTimeout(()=>{cloudRetryTimer=0;startCloudDrain();},delay);
-            if(cloudRetryCount===1)toast("Cloud sync paused. Reconnecting...");
+          if(permanent&&request.type!=="click_checkpoint"){
+            cloudOutbox.splice(0,consume);persistCloudOutbox();
+            toast(error.message||"A cloud action was rejected. Your clicks were kept.");
+            await resyncCloud();continue;
           }
-          break;
+          scheduleCloudRetry();break;
         }
       }
-      if(cloudMode&&!cloudOutbox.length&&cloudSyncRequested){
-        cloudSyncRequested=false;
-        try{const data=await apiJson("/api/progress/snapshot");if(cloudMode)applyCloudSnapshot(data);}
-        catch(_){/* A later scheduled sync will retry. */}
-        lastCloudSync=Date.now();
-      }
-    })().finally(()=>{cloudBusy=false;if(cloudMode&&cloudOutbox.length&&!cloudRetryTimer)startCloudDrain();});
+    })().finally(()=>{cloudBusy=false;renderCloudStatus();if(cloudMode&&cloudOutbox.length&&!cloudRetryTimer&&!cloudUnavailable)queueMicrotask(startCloudDrain);});
     return cloudQueue;
   }
   function queueCloudAction(action){
     if(!cloudMode)return cloudQueue;
-    stagePendingClicks();
+    if(!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return cloudQueue;}
+    if(!stagePendingClicks())return cloudQueue;
+    clearTimeout(cloudClickTimer);cloudClickTimer=0;
     if(action){
-      cloudOutbox.push({actionId:crypto.randomUUID(),...action});
-      persistCloudOutbox();
-      if(cloudRetryStoppedAt){cloudRetryStoppedAt=0;cloudRetryCount=0;}
-    }else if(!cloudOutbox.length&&Date.now()-lastCloudSync>30000)cloudSyncRequested=true;
+      cloudOutbox.push({actionId:crypto.randomUUID(),...action,clickTotal:cloudClickStream.total});
+      if(!persistCloudOutbox())return cloudQueue;
+    }else cloudClickDue=true;
     return startCloudDrain();
   }
   async function signOut(){
     $("accountMenu").hidden=true;
     if(cloudMode){
       queueCloudAction(null);await cloudQueue;
-      if(cloudOutbox.length||pendingClicks){toast("Cloud sync is pending. Try signing out when connected.");return;}
+      if(cloudPending()||cloudUnavailable){toast("Cloud sync is pending. Try signing out when connected.");return;}
       await sendHeartbeat(false);
     }
     try{await apiJson("/api/auth/signout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
     catch(_){toast("Sign out failed. Try again.");return;}
-    cloudMode=false;pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");
+    cloudMode=false;pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");localStorage.removeItem(CLOUD_ACCOUNT_CACHE);renderCloudStatus();
     account={authenticated:false,username:null,needsUsername:false};renderAccountControls();
     await refreshPremiumStatus();renderTop();renderCurrent();toast("Signed out");
   }
@@ -1262,13 +1305,15 @@
   }
   async function sendHeartbeat(active=true){
     if(!cloudMode||heartbeatBusy||(active&&document.hidden))return;
-    heartbeatBusy=true;
+    heartbeatBusy=true;lastHeartbeatSent=Date.now();
     try{
-      if(active){stagePendingClicks();await startCloudDrain();}
       const data=await apiJson("/api/progress/heartbeat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})});
-      if(active&&cloudMode)applyCloudSnapshot(data);
-      lastHeartbeatSent=Date.now();
-    }catch(error){if(active&&error.status!==409)toast("Playtime sync will retry shortly.");}
+      if(active&&cloudMode){
+        if(!cloudPending())applyCloudSnapshot(data);
+        else {state.totalPlaytime=safeNumber(data.totalPlaytime,state.totalPlaytime);state.pendingDropUntilMs=safeNumber(data.pendingDropUntilMs);updateDropDisplay();}
+      }
+      if(!cloudRetryTimer&&!cloudOutbox.length)cloudUnavailable=false;renderCloudStatus();
+    }catch(_){cloudUnavailable=true;renderCloudStatus();}
     finally{heartbeatBusy=false;}
   }
   function pauseHeartbeat(){
@@ -1299,8 +1344,7 @@
     state.highestRate=Math.max(state.highestRate,currentRate());
     if(now>=ambientNext)spawnAmbientBill();
     if(now>=tickerNext)rotateTicker();
-    if(cloudMode&&!document.hidden&&now-lastHeartbeatSent>=30000)sendHeartbeat(true);
-    if(cloudMode&&!cloudBusy&&!cloudRetryTimer&&now-lastCloudSync>30000)queueCloudAction(null);
+    if(cloudMode&&!document.hidden&&now-lastHeartbeatSent>=60000)sendHeartbeat(true);
     renderTop();
     if(now-renderTimer>1000){renderCurrent();renderTimer=now;}
     if(now-achievementTimer>1000){checkAchievements();achievementTimer=now;}
@@ -1309,7 +1353,7 @@
     setupMusic();buildWealthArt();load();goldenNext=Date.now()+randomBillDelay();applySettings();renderTop();renderOwned();
     await refreshPremiumStatus();
     if(!applyOffline())await refreshAccount();
-    pileEl.addEventListener("click",event=>{const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){save();lastClickSave=Date.now();}});
+    pileEl.addEventListener("click",event=>{if(cloudMode&&!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return;}const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();renderCloudStatus();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){if(cloudMode)stagePendingClicks();save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
     $("boosterDrop").addEventListener("click",claimBoosterDrop);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
@@ -1333,7 +1377,9 @@
     $("modalBackdrop").addEventListener("click",event=>{if(event.target===$("modalBackdrop"))closeModal();});
     document.addEventListener("keydown",event=>{if(event.key==="Escape"){closeModal();closeFeature();}});
     window.addEventListener("online",()=>{
-      if(cloudMode&&cloudOutbox.length){cloudRetryStoppedAt=0;cloudRetryCount=0;clearTimeout(cloudRetryTimer);cloudRetryTimer=0;startCloudDrain();}
+      if(!cloudMode)return;
+      cloudRetryCount=0;clearTimeout(cloudRetryTimer);cloudRetryTimer=0;
+      if(!account.authenticated)refreshAccount();else {cloudClickDue=true;startCloudDrain();sendHeartbeat(true);}
     });
     window.addEventListener("pagehide",()=>{save();pauseHeartbeat();if(cloudMode)queueCloudAction(null);});
     document.addEventListener("visibilitychange",()=>{

@@ -6,12 +6,13 @@
   <meta name="theme-color" content="#11251c">
   <meta name="description" content="ClickTheCash — build a business fortune, one tap at a time.">
   <title>ClickTheCash</title>
-  <link rel="stylesheet" href="style.css?v=progression-1">
-  <script src="script.js?v=progression-1" defer></script>
+  <link rel="stylesheet" href="style.css?v=cloud-sync-2">
+  <script src="cloud-outbox.js?v=cloud-sync-2" defer></script>
+  <script src="script.js?v=cloud-sync-2" defer></script>
 </head>
 <body>
   <div class="game-shell">
-    <div class="market-ticker"><span class="ticker-label"><span class="live-dot"></span> MARKET WIRE</span><span id="tickerText" class="ticker-text">The market is open. Every tap counts.</span><button id="fitScreen" class="fit-screen-toggle" type="button" aria-pressed="false">Fit screen: OFF</button><div id="accountControls" class="account-controls"><a id="googleSignIn" href="/api/auth/google/start">Sign in with Google</a><button id="accountButton" type="button" hidden></button><div id="accountMenu" class="account-menu" hidden><strong id="accountUsername"></strong><button id="accountDetails" type="button">Account</button><button id="signOut" type="button">Sign out</button></div></div></div>
+    <div class="market-ticker"><span class="ticker-label"><span class="live-dot"></span> MARKET WIRE</span><span id="tickerText" class="ticker-text">The market is open. Every tap counts.</span><span id="cloudSyncStatus" class="cloud-sync-status" role="status" aria-live="polite" hidden></span><button id="fitScreen" class="fit-screen-toggle" type="button" aria-pressed="false">Fit screen: OFF</button><div id="accountControls" class="account-controls"><a id="googleSignIn" href="/api/auth/google/start">Sign in with Google</a><button id="accountButton" type="button" hidden></button><div id="accountMenu" class="account-menu" hidden><strong id="accountUsername"></strong><button id="accountDetails" type="button">Account</button><button id="signOut" type="button">Sign out</button></div></div></div>
     <main class="columns">
       <section class="play-column" aria-label="Cash collection">
         <header class="play-header"><div class="brand-mark">$</div><div class="brand-copy"><span class="brand-kicker">BUILD YOUR FORTUNE</span><h1>ClickTheCash</h1></div><div class="music-controls" role="group" aria-label="Background music"><span class="music-label">MUSIC</span><button id="musicMute" type="button" aria-label="Mute background music" aria-pressed="false">ON</button><input id="musicVolume" type="range" min="0" max="100" value="30" aria-label="Music volume"><span id="musicVolumeValue" class="music-volume-value">30%</span></div></header><audio id="backgroundMusic" src="assets/audio/background.wav" preload="none" loop></audio>

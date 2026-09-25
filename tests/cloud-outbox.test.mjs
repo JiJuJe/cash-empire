@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const queue=require('../CashEmpire/cloud-outbox.js');
+const id=n=>'old-click-'+String(n).padStart(6,'0');
+test('one thousand old click batches compact to one request and keep the purchase order',()=>{
+  const clicks=Array.from({length:1000},(_,i)=>({actionId:id(i),type:'click_batch',count:2}));
+  const buy={actionId:'buy-business-old-0001',type:'buy_business',businessId:'collector',quantity:1};
+  const migrated=queue.compactLegacy([...clicks,buy]);
+  assert.equal(migrated.length,2);
+  assert.equal(migrated[0].entries.length,1000);
+  assert.equal(migrated[0].total,2000);
+  assert.equal(migrated[1].type,'buy_business');
+  const plan=queue.planNext(migrated,{id:'device-stream-0001',total:0,acked:0});
+  assert.equal(plan.consume,2);
+  assert.equal(plan.request.type,'buy_business');
+  assert.equal(plan.request.clicks[0].legacy.length,1000);
+  assert.equal(plan.request.clicks[0].total,2000);
+});
+test('a large old backlog needs only a few checkpoints and keeps upgrades between click runs',()=>{
+  const first=Array.from({length:1500},(_,i)=>({actionId:id(i),type:'click_batch',count:1}));
+  const upgrade={actionId:'upgrade-action-0001',type:'buy_upgrade',upgradeId:'wallet'};
+  const second=Array.from({length:1000},(_,i)=>({actionId:id(i+1500),type:'click_batch',count:1}));
+  const migrated=queue.compactLegacy([...first,upgrade,...second]);
+  assert.deepEqual(migrated.map(x=>x.type),['legacy_clicks','legacy_clicks','buy_upgrade','legacy_clicks']);
+  assert.deepEqual(migrated.filter(x=>x.type==='legacy_clicks').map(x=>x.entries.length),[1000,500,1000]);
+  assert.deepEqual(migrated.filter(x=>x.type==='legacy_clicks').map(x=>x.total),[1000,1500,2500]);
+  const plan=queue.planNext(migrated.slice(1),{id:'device-stream-0001',total:0,acked:0});
+  assert.equal(plan.consume,2);assert.equal(plan.request.type,'buy_upgrade');
+});
+test('migration deduplicates old action IDs and attaches pending new clicks before a buy',()=>{
+  const old={actionId:id(1),type:'click_batch',count:25};
+  const migrated=queue.compactLegacy([old,old,{actionId:'buy-business-old-0002',type:'buy_business',businessId:'lemonade',quantity:1,clickTotal:50}]);
+  assert.equal(migrated[0].total,25);
+  const plan=queue.planNext(migrated,{id:'device-stream-0001',total:50,acked:0});
+  assert.equal(plan.request.clicks.length,2);
+  assert.equal(plan.request.clicks[1].total,50);
+  assert.equal(plan.request.clickTotal,undefined);
+});
