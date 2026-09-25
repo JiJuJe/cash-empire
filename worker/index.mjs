@@ -1,4 +1,5 @@
 import {readSession,handleAuthRequest} from "./auth.mjs";
+import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationMessage} from "./admin.mjs";
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
@@ -53,7 +54,7 @@ function loadProgress(row){
     pendingDropUntilMs:Math.max(0,Number(row.pending_drop_until_ms)||0),rushUntilMs:Math.max(0,Number(row.rush_until_ms)||0),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
-    clickStreams:decodeJson(row.click_streams_json||"{}",{}),version:row.version
+    clickStreams:decodeJson(row.click_streams_json||"{}",{}),epoch:row.progress_epoch||0,version:row.version
   };
 }
 function normalizeExtras(s){
@@ -67,6 +68,7 @@ function normalizeExtras(s){
   s.equipped=Array.isArray(s.equipped)?s.equipped.slice(0,6):[];
   s.premiumSlots=Array.isArray(s.premiumSlots)?s.premiumSlots:[];
   s.clickStreams=s.clickStreams&&typeof s.clickStreams==="object"&&!Array.isArray(s.clickStreams)?s.clickStreams:{};
+  s.adminEffects=Array.isArray(s.adminEffects)?s.adminEffects:[];
   return s;
 }
 function bonus(s,type){return boosterBonus(s,type);}
@@ -76,16 +78,16 @@ function totalCost(b,owned,count,priceFactor=1){
   return b.cost*Math.pow(PRICE_GROWTH,owned)*Math.expm1(count*Math.log(PRICE_GROWTH))/(PRICE_GROWTH-1)*priceFactor;
 }
 function prestigeBonus(s){return 1+s.empirePoints*(s.prestige.includes("compound")?.015:.01);}
-function totalBonus(s){return (1+s.rebirths*.1)*prestigeBonus(s)*(s.prestige.includes("empireMomentum")?1.15:1)*(1+bonus(s,"total"));}
-function unitRate(s,b,entitled){
-  let rate=b.income*totalBonus(s)*(s.prestige.includes("investor")?1.1:1)*(s.prestige.includes("businessNetwork")?1.1:1)*(1+bonus(s,"business"));
+function totalBonus(s,now=Date.now()){return (1+s.rebirths*.1)*prestigeBonus(s)*(s.prestige.includes("empireMomentum")?1.15:1)*(1+bonus(s,"total"))*boostMultiplier(s.adminEffects,"total",now);}
+function unitRate(s,b,entitled,now=Date.now()){
+  let rate=b.income*totalBonus(s,now)*(s.prestige.includes("investor")?1.1:1)*(s.prestige.includes("businessNetwork")?1.1:1)*(1+bonus(s,"business"))*boostMultiplier(s.adminEffects,"business",now);
   for(const [count,mult] of MILESTONES)if(s.upgrades.includes(b.id+"-"+count))rate*=mult;
   for(const upgrade of SPECIAL)if(s.upgrades.includes(upgrade.id)&&(upgrade.effect==="total"||upgrade.effect===b.id))rate*=upgrade.mult;
   return rate*(entitled?2:1);
 }
-function businessRate(s,entitled){return BUSINESS.reduce((sum,b)=>sum+(s.businesses[b.id]||0)*unitRate(s,b,entitled),0);}
-function clickRate(s,entitled){
-  let value=totalBonus(s)*(s.prestige.includes("executive")?2:1)*(s.prestige.includes("clickTraining")?1.1:1)*(1+bonus(s,"click"));
+function businessRate(s,entitled,now=Date.now()){return BUSINESS.reduce((sum,b)=>sum+(s.businesses[b.id]||0)*unitRate(s,b,entitled,now),0);}
+function clickRate(s,entitled,now=Date.now()){
+  let value=totalBonus(s,now)*(s.prestige.includes("executive")?2:1)*(s.prestige.includes("clickTraining")?1.1:1)*(1+bonus(s,"click"))*boostMultiplier(s.adminEffects,"click",now);
   for(const upgrade of CLICK_UPGRADES)if(s.upgrades.includes(upgrade.id))value*=upgrade.mult;
   for(const upgrade of SPECIAL)if(upgrade.effect==="click"&&s.upgrades.includes(upgrade.id))value*=upgrade.mult;
   return value*(entitled?2:1);
@@ -107,8 +109,14 @@ function advance(s,now,entitled){
   const elapsed=Math.min(cap,Math.max(0,(now-start)/1000));
   const offline=elapsed>60;
   const efficiency=offline?(s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")):1;
-  const rushSeconds=!offline?Math.max(0,Math.min(now,s.rushUntilMs)-start)/1000:0;
-  award(s,businessRate(s,entitled)*(elapsed+6*rushSeconds)*efficiency);
+  const end=start+elapsed*1000;
+  const boundaries=[start,end];
+  for(const effect of s.adminEffects){for(const point of [effect.starts_at_ms,effect.expires_at_ms,effect.removed_at_ms])if(point>start&&point<end)boundaries.push(point);}
+  if(!offline&&s.rushUntilMs>start&&s.rushUntilMs<end)boundaries.push(s.rushUntilMs);
+  boundaries.sort((a,b)=>a-b);
+  let produced=0;
+  for(let i=1;i<boundaries.length;i++){const mid=(boundaries[i-1]+boundaries[i])/2;produced+=businessRate(s,entitled,mid)*(boundaries[i]-boundaries[i-1])/1000*(!offline&&mid<s.rushUntilMs?7:1);}
+  award(s,produced*efficiency);
   s.lastAccrualMs=now;
 }
 function heartbeatState(s,now,active,random=Math.random){
@@ -120,7 +128,7 @@ function heartbeatState(s,now,active,random=Math.random){
   if(s.pendingDropUntilMs&&now>=s.pendingDropUntilMs)s.pendingDropUntilMs=0;
   if(s.totalPlaytimeMs>=s.nextDropPlaytimeMs){
     s.nextDropPlaytimeMs+=DROP_INTERVAL_MS;
-    if(!s.pendingDropUntilMs&&random()<.08)s.pendingDropUntilMs=now+20000;
+    if(!s.pendingDropUntilMs&&random()<Math.min(.8,.08*boostMultiplier(s.adminEffects,"luck",now)))s.pendingDropUntilMs=now+20000;
   }
 }
 function upgradeFor(s,id){
@@ -140,22 +148,22 @@ const CLICK_BATCH_TECHNICAL_MAX=1000;
 function applyAction(current,action,now,entitled,random=Math.random,checkpointClicks=0){
   const s=normalizeExtras(structuredClone(current));
   advance(s,now,entitled);
-  if(checkpointClicks){award(s,clickRate(s,entitled)*checkpointClicks*(s.rushUntilMs>now?7:1));s.totalClicks+=checkpointClicks;}
+  if(checkpointClicks){award(s,clickRate(s,entitled,now)*checkpointClicks*(s.rushUntilMs>now?7:1));s.totalClicks+=checkpointClicks;}
   if(action.type==="click_checkpoint"){
     // The cumulative stream receipt lives in this same progress row.
   }else if(action.type==="click_batch"){
     const count=action.count;
     if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_TECHNICAL_MAX)
       throw Error("Invalid click batch.");
-    award(s,clickRate(s,entitled)*count*(s.rushUntilMs>now?7:1));s.totalClicks+=count;
+    award(s,clickRate(s,entitled,now)*count*(s.rushUntilMs>now?7:1));s.totalClicks+=count;
   }else if(action.type==="golden"){
-    const frequency=1+(s.prestige.includes("goldenRadar")?.1:0)+(s.prestige.includes("lucky")?.3:0)+bonus(s,"goldenFrequency");
+    const frequency=(1+(s.prestige.includes("goldenRadar")?.1:0)+(s.prestige.includes("lucky")?.3:0)+bonus(s,"goldenFrequency"))*boostMultiplier(s.adminEffects,"luck",now);
     if(now-s.lastGoldenMs<180000/frequency)throw Error("Golden Bill is not ready.");
     s.lastGoldenMs=now;
     if(random()<.35){
       s.rushUntilMs=now+30000;s.event={type:"goldRush",until:s.rushUntilMs};
     }else{
-      const base=Math.max(500,businessRate(s,entitled)*180,clickRate(s,entitled)*100);
+      const base=Math.max(500,businessRate(s,entitled,now)*180,clickRate(s,entitled,now)*100);
       const multiplier=.8+random()*.6;
       const amount=base*multiplier*(1+(s.prestige.includes("goldenReserve")?.25:0)+bonus(s,"goldenCash"));
       award(s,amount);s.event={type:"goldenCash",amount};
@@ -191,7 +199,8 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     s.equipped[slot-1]=null;
   }else if(action.type==="claim_booster_drop"){
     if(!s.pendingDropUntilMs||now>s.pendingDropUntilMs)throw Error("Booster Drop has expired.");
-    const booster=rollBooster(random);
+    const luck=boostMultiplier(s.adminEffects,"luck",now);
+    const booster=rollBooster(()=>Math.pow(random(),1/luck));
     s.boosterInventory[booster.id]=Math.min(1000000,(Number(s.boosterInventory[booster.id])||0)+1);
     s.pendingDropUntilMs=0;s.event={type:"boosterDrop",boosterId:booster.id,rarity:booster.rarity};
   }else if(action.type==="rebirth"){
@@ -272,7 +281,7 @@ async function ensureProgress(env,userId,now){
 const scoreSql=`WITH scores AS (
   SELECT u.id,u.username,p.rebirths,
     MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)*CASE WHEN ?-p.last_accrual_ms>60000 THEN p.offline_efficiency ELSE 1 END) AS lifetime_cash
-  FROM progress p JOIN users u ON u.id=p.user_id WHERE u.username_set=1
+  FROM progress p JOIN users u ON u.id=p.user_id WHERE u.username_set=1 AND NOT EXISTS(SELECT 1 FROM moderation_state m WHERE m.user_id=u.id AND (m.banned_at_ms IS NOT NULL OR m.suspended_until_ms>?))
 ), ranked AS (
   SELECT id,username,rebirths,lifetime_cash,
     ROW_NUMBER() OVER (ORDER BY lifetime_cash DESC,rebirths DESC,id ASC) AS rank
@@ -284,23 +293,23 @@ function leaderboardEntry(row,userId){
 async function getLeaderboard(request,env,user){
   await infrastructureLimit(env,request,"leaderboard:"+(user?.id||"guest"));
   const now=Date.now();
-  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=30 ORDER BY rank").bind(now,now).all();
+  const top=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE rank<=30 ORDER BY rank").bind(now,now,now).all();
   const players=(top.results||[]).map(row=>leaderboardEntry(row,user?.id));
   let me=players.find(row=>row.isSelf)||null;
   if(user?.username_set&&!me){
-    const row=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE id=?").bind(now,now,user.id).first();
+    const row=await env.DB.prepare(scoreSql+" SELECT * FROM ranked WHERE id=?").bind(now,now,now,user.id).first();
     if(row)me=leaderboardEntry(row,user.id);
   }
   return json({players,me,authenticated:Boolean(user)});
 }
 function progressSummary(s,entitled){
-  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,
+  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,
     ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?7:1),empirePoints:s.empirePoints,
     empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
     prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
     boosterInventory:s.boosterInventory,equippedBoosters:s.equipped,boosterSlotsUnlocked:s.slotsUnlocked,
     premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
-    rushUntilMs:s.rushUntilMs,event:s.event||null};
+    rushUntilMs:s.rushUntilMs,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
 }
 function updateStatement(env,s,oldVersion,entitled){
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
@@ -325,13 +334,14 @@ function initialProgress(userId,now){
   return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
     pendingDropUntilMs:0,rushUntilMs:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
-    upgrades:[],prestige:[],clickStreams:{},version:0});
+    upgrades:[],prestige:[],clickStreams:{},epoch:0,version:0});
 }
 async function getProgress(env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   const now=Date.now(),row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(user.id).first();
   const entitled=await hasDoubleMoney(env,user.id);
   const s=row?normalizeExtras(loadProgress(row)):initialProgress(user.id,now);
+  s.adminEffects=await adminBoosts(env,user.id,s.lastAccrualMs);
   s.premiumSlots=await premiumSlots(env,user.id);
   advance(s,now,entitled); // Virtual accrual: GET never mutates D1.
   return json(progressSummary(s,entitled));
@@ -380,14 +390,14 @@ async function applyCheckpoints(env,userId,s,checkpoints){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId","clicks"],100000);
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId","clicks","generation"],100000);
   const checkpointOnly=action.type==="click_checkpoint";
   if(!checkpointOnly&&(typeof action.actionId!=="string"||!STREAM_ID.test(action.actionId)))fail(400,"Invalid action ID.");
-  const allowed={click_checkpoint:["type","clicks"],click_batch:["actionId","type","count"],golden:["actionId","type","clicks"],
-    buy_business:["actionId","type","businessId","quantity","clicks"],buy_upgrade:["actionId","type","upgradeId","clicks"],
-    buy_prestige:["actionId","type","upgradeId","clicks"],rebirth:["actionId","type","clicks"],
-    unlock_slot:["actionId","type","slot","clicks"],equip_booster:["actionId","type","slot","boosterId","clicks"],
-    unequip_booster:["actionId","type","slot","clicks"],claim_booster_drop:["actionId","type","clicks"]};
+  const allowed={click_checkpoint:["type","clicks","generation"],click_batch:["actionId","type","count","generation"],golden:["actionId","type","clicks","generation"],
+    buy_business:["actionId","type","businessId","quantity","clicks","generation"],buy_upgrade:["actionId","type","upgradeId","clicks","generation"],
+    buy_prestige:["actionId","type","upgradeId","clicks","generation"],rebirth:["actionId","type","clicks","generation"],
+    unlock_slot:["actionId","type","slot","clicks","generation"],equip_booster:["actionId","type","slot","boosterId","clicks","generation"],
+    unequip_booster:["actionId","type","slot","clicks","generation"],claim_booster_drop:["actionId","type","clicks","generation"]};
   if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key))||
     (checkpointOnly&&!action.clicks))fail(400,"Invalid action.");
   const bucket=checkpointOnly||action.type==="click_batch"?"progress-click:"+user.id:
@@ -404,6 +414,8 @@ async function postProgress(request,env,user){
       }
     }
     const now=Date.now(),row=await ensureProgress(env,user.id,now),current=normalizeExtras(loadProgress(row));
+    current.adminEffects=await adminBoosts(env,user.id,current.lastAccrualMs);
+    if((action.generation??0)!==(current.epoch||0))fail(409,"Progress was reset. Refresh cloud state.");
     current.premiumSlots=await premiumSlots(env,user.id);
     const checkpoint=await applyCheckpoints(env,user.id,current,action.clicks);
     if(checkpointOnly&&!checkpoint.advanced)return getProgress(env,user);
@@ -434,7 +446,7 @@ async function postHeartbeat(request,env,user){
   const entitled=await hasDoubleMoney(env,user.id);
   for(let attempt=0;attempt<3;attempt++){
     const now=Date.now(),row=await ensureProgress(env,user.id,now);
-    const s=normalizeExtras(loadProgress(row));s.premiumSlots=await premiumSlots(env,user.id);
+    const s=normalizeExtras(loadProgress(row));s.adminEffects=await adminBoosts(env,user.id,s.lastAccrualMs);s.premiumSlots=await premiumSlots(env,user.id);
     advance(s,now,entitled);heartbeatState(s,now,body.active);
     const updated=await updateStatement(env,s,s.version,entitled).run();
     if(updated.meta?.changes===1)return json(progressSummary(s,entitled));
@@ -561,6 +573,9 @@ export default {
       if(authResponse)return authResponse;
       if(url.pathname==="/api/store/webhook"&&request.method==="POST")return await stripeWebhook(request,env);
       const user=await sessionUser(request,env);
+      const moderation=user?moderationMessage(await moderationFor(env,user.id)):null;
+      if(moderation&&url.pathname!=="/api/leaderboard")fail(403,moderation.message+(moderation.expiresAtMs?" Until "+new Date(moderation.expiresAtMs).toISOString():""));
+      if(url.pathname.startsWith("/api/admin/"))return await handleAdminRequest(request,env,user,{infrastructureLimit,rateLimit,hasDoubleMoney,premiumSlots,loadProgress,advance,progressSummary,updateStatement});
       if(url.pathname==="/api/leaderboard"&&request.method==="GET")return await getLeaderboard(request,env,user);
       if(url.pathname==="/api/progress"&&request.method==="POST")
         fail(400,"Client-supplied cash, lifetime cash and rebirth totals are not accepted. Send server-validated actions.");

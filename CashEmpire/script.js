@@ -107,9 +107,9 @@
   let premiumMultiplier = 1;
   let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false};
   let account={authenticated:false,username:null,needsUsername:false};
-  const CLOUD_FLUSH_MS=180000,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v3:",OLD_OUTBOX_V2="cash-empire-cloud-outbox-v2:",LEGACY_CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",LEGACY_CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:",CLOUD_STREAM_PREFIX="cash-empire-click-stream-v3:",CLOUD_ACCOUNT_CACHE="cash-empire-cloud-account-v1";
-  let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[];
-  let cloudClickStream={id:"",total:0,acked:0},cloudClickDue=false,cloudUnavailable=false,cloudServerBalance=0;
+  const CLOUD_FLUSH_MS=180000,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v3:",OLD_OUTBOX_V2="cash-empire-cloud-outbox-v2:",LEGACY_CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v1:",LEGACY_CLOUD_LAST_BATCH_PREFIX="cash-empire-cloud-last-batch-v1:",CLOUD_STREAM_PREFIX="cash-empire-click-stream-v3:",CLOUD_ACCOUNT_CACHE="cash-empire-cloud-account-v1",CLOUD_USER_ID_CACHE="cash-empire-cloud-user-id-v1";
+  let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[],cloudAdminBoosts=[];
+  let cloudClickStream={id:"",total:0,acked:0},cloudClickDue=false,cloudUnavailable=false,cloudServerBalance=0,cloudGeneration=0;
   let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0;
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const CLOUD_CHOICE="cash-empire-cloud-choice-v1",LOCAL_BACKUP="cash-empire-local-backup-v1";
@@ -146,7 +146,8 @@
       return sum+(b?.effect===effect&&state.boosterInventory[id]>0?b.value:0);
     },0);
   }
-  function totalMultiplier(){return (1+state.rebirths*.1)*prestigeBonus()*(hasPrestige("empireMomentum")?1.15:1)*(1+boosterBonus("total"));}
+  function adminMultiplier(kind){if(!cloudMode)return 1;return Math.min(1e12,cloudAdminBoosts.reduce((n,b)=>n*(b.kind===kind&&(b.expiresAtMs===null||b.expiresAtMs>Date.now())?b.multiplier:1),1));}
+  function totalMultiplier(){return (1+state.rebirths*.1)*prestigeBonus()*(hasPrestige("empireMomentum")?1.15:1)*(1+boosterBonus("total"))*adminMultiplier("total");}
   function priceFactor(){return Math.max(.75,1-(hasPrestige("bulkBuyer")?.03:0)-boosterBonus("discount"));}
   function totalCost(b,owned,quantity) {
     if (quantity <= 0) return 0;
@@ -185,7 +186,7 @@
     return MILESTONES.reduce((value,m) => value * (has(b.id+"-"+m.count) ? m.mult : 1),1);
   }
   function businessUnitRate(b) {
-    let rate=b.income*businessMultiplier(b)*totalMultiplier()*(hasPrestige("investor")?1.1:1)*(hasPrestige("businessNetwork")?1.1:1)*(1+boosterBonus("business"));
+    let rate=b.income*businessMultiplier(b)*totalMultiplier()*(hasPrestige("investor")?1.1:1)*(hasPrestige("businessNetwork")?1.1:1)*(1+boosterBonus("business"))*adminMultiplier("business");
     for(const u of SPECIAL_UPGRADES)if(has(u.id)&&(u.effect==="total"||u.effect===b.id))rate*=u.mult;
     return rate * premiumMultiplier;
   }
@@ -199,7 +200,7 @@
     let value=1;
     for(const u of CLICK_UPGRADES)if(has(u.id))value*=u.mult;
     for(const u of SPECIAL_UPGRADES)if(u.effect==="click"&&has(u.id))value*=u.mult;
-    value*=totalMultiplier()*(hasPrestige("executive")?2:1)*(hasPrestige("clickTraining")?1.1:1)*(1+boosterBonus("click"));
+    value*=totalMultiplier()*(hasPrestige("executive")?2:1)*(hasPrestige("clickTraining")?1.1:1)*(1+boosterBonus("click"))*adminMultiplier("click");
     if(buff&&buff.until>Date.now()&&(buff.type==="click"||buff.type==="goldrush"))value*=buff.clickMult||buff.mult;
     return value * premiumMultiplier;
   }
@@ -381,7 +382,9 @@
     $("lifetime").textContent=euro(state.lifetime);
     $("perClick").textContent=euro(clickValue(),clickValue()<10?1:0)+" / click";
     const active=buff&&buff.until>Date.now();
-    $("buffBar").textContent=active?"GOLD RUSH ×7 · 00:"+String(Math.max(0,Math.ceil((buff.until-Date.now())/1000))).padStart(2,"0"):"";
+    const rush=active?"GOLD RUSH ×7 · 00:"+String(Math.max(0,Math.ceil((buff.until-Date.now())/1000))).padStart(2,"0"):"";
+    const admin=cloudMode?cloudAdminBoosts.filter(b=>b.expiresAtMs===null||b.expiresAtMs>Date.now()).map(b=>"ADMIN "+b.kind.toUpperCase()+" ×"+b.multiplier).join(" · "):"";
+    $("buffBar").textContent=[rush,admin].filter(Boolean).join(" · ");
     updatePile();
   }
   function compactGroup(amount) {
@@ -837,6 +840,12 @@
     $("accountButton").textContent=(account.username||"Choose username")+" ▼";
     $("accountUsername").textContent=account.username||"Choose username";
   }
+  let accountBlocked=false;
+  async function refreshAdminAccess(){
+    $("adminLink").hidden=true;if(!account.authenticated||account.moderation)return;
+    try{const role=await apiJson("/api/admin/me");$("adminLink").hidden=!role.role;}catch(_){}
+  }
+  function showAccountNotice(info){const el=$("accountNotice");el.hidden=!info;el.textContent=info?info.message+(info.expiresAtMs?" Expires "+new Date(info.expiresAtMs).toLocaleString()+".":"")+(info.reason?" Reason: "+info.reason:""):"";}
   async function refreshAccount(){
     let data;try{data=await apiJson("/api/account");}
     catch(_){
@@ -847,8 +856,17 @@
       renderAccountControls();return;
     }
     if(cloudMode&&account.username&&data.authenticated===true&&data.username&&data.username!==account.username)stagePendingClicks();
+    if(data.authenticated&&data.userId){
+      try{const priorId=localStorage.getItem(CLOUD_USER_ID_CACHE),priorName=localStorage.getItem(CLOUD_ACCOUNT_CACHE);
+      if(priorId===data.userId&&priorName&&typeof data.username==="string"&&priorName!==data.username){
+        for(const prefix of [CLOUD_OUTBOX_PREFIX,CLOUD_STREAM_PREFIX,"cash-empire-progress-epoch-v1:"]){const oldKey=prefix+priorName,newKey=prefix+data.username,raw=localStorage.getItem(oldKey);if(raw!==null&&localStorage.getItem(newKey)===null){localStorage.setItem(newKey,raw);localStorage.removeItem(oldKey);}}
+      }
+      localStorage.setItem(CLOUD_USER_ID_CACHE,data.userId);}catch(_){cloudUnavailable=true;renderCloudStatus();}
+    }
     account={authenticated:data.authenticated===true,username:typeof data.username==="string"?data.username:localStorage.getItem(CLOUD_ACCOUNT_CACHE),needsUsername:data.needsUsername===true};
-    renderAccountControls();
+    account.moderation=data.moderation||null;showAccountNotice(account.moderation);
+    renderAccountControls();refreshAdminAccess();
+    if(account.moderation)return;
     if(account.needsUsername)showUsernamePrompt();
     else if(account.authenticated){
       const choice=localStorage.getItem(CLOUD_CHOICE);
@@ -897,7 +915,15 @@
     ]);
   }
   function applyCloudSnapshot(data,reset=false){
+    if(Number.isSafeInteger(data.progressEpoch)&&data.progressEpoch>=0&&cloudMode){
+      const key="cash-empire-progress-epoch-v1:"+(account.username||"unknown");
+      try{const previous=localStorage.getItem(key),changed=(previous!==null&&Number(previous)!==data.progressEpoch)||(previous===null&&data.progressEpoch>0);
+        if(changed){cloudOutbox=[];pendingClicks=0;cloudClickDue=false;clearTimeout(cloudClickTimer);cloudClickTimer=0;cloudClickStream={id:crypto.randomUUID(),total:0,acked:0};localStorage.setItem(cloudOutboxKey(),"[]");localStorage.setItem(cloudStreamKey(),JSON.stringify(cloudClickStream));toast("Admin reset: old pending gameplay actions were retired.");}
+        localStorage.setItem(key,String(data.progressEpoch));cloudGeneration=data.progressEpoch;
+      }catch(_){cloudUnavailable=true;renderCloudStatus();}
+    }
     if(reset){const settings=state.settings,achievements=state.achievements;state=defaultState();state.settings=settings;state.achievements=achievements;}
+    cloudAdminBoosts=Array.isArray(data.adminBoosts)?data.adminBoosts:[];
     cloudServerBalance=safeNumber(data.balance);
     state.money=cloudServerBalance;
     state.lifetime=safeNumber(data.lifetimeCash);
@@ -999,7 +1025,7 @@
     }catch(_){cloudUnavailable=true;renderCloudStatus();toast("Cloud temporarily unavailable. Your progress is queued locally.");scheduleCloudRetry();}
   }
   async function postCloudAction(action){
-    return apiJson("/api/progress/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(action)});
+    return apiJson("/api/progress/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...action,generation:cloudGeneration})});
   }
   async function resyncCloud(){
     if(!cloudMode)return;
@@ -1043,6 +1069,7 @@
           if(cloudMode)applyCloudSnapshot(data);
           cloudRetryCount=0;cloudUnavailable=false;lastCloudSync=Date.now();renderCloudStatus();
         }catch(error){
+          if(error.status===409){const before=cloudGeneration;await resyncCloud();if(cloudGeneration!==before){cloudUnavailable=false;continue;}scheduleCloudRetry();break;}
           const permanent=error.status===400||error.status===422;
           if(permanent&&request.type!=="click_checkpoint"&&request.clicks?.length){
             try{
@@ -1066,6 +1093,7 @@
   }
   function queueCloudAction(action){
     if(!cloudMode)return cloudQueue;
+    if(accountBlocked||account.moderation){toast("This account cannot use verified gameplay right now.");return cloudQueue;}
     if(!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return cloudQueue;}
     if(!stagePendingClicks())return cloudQueue;
     clearTimeout(cloudClickTimer);cloudClickTimer=0;
@@ -1084,7 +1112,7 @@
     }
     try{await apiJson("/api/auth/signout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
     catch(_){toast("Sign out failed. Try again.");return;}
-    cloudMode=false;pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");localStorage.removeItem(CLOUD_ACCOUNT_CACHE);renderCloudStatus();
+    cloudMode=false;cloudAdminBoosts=[];pendingClicks=0;localStorage.setItem(CLOUD_CHOICE,"local");localStorage.removeItem(CLOUD_ACCOUNT_CACHE);localStorage.removeItem(CLOUD_USER_ID_CACHE);renderCloudStatus();
     account={authenticated:false,username:null,needsUsername:false};renderAccountControls();
     await refreshPremiumStatus();renderTop();renderCurrent();toast("Signed out");
   }
@@ -1353,7 +1381,8 @@
     setupMusic();buildWealthArt();load();goldenNext=Date.now()+randomBillDelay();applySettings();renderTop();renderOwned();
     await refreshPremiumStatus();
     if(!applyOffline())await refreshAccount();
-    pileEl.addEventListener("click",event=>{if(cloudMode&&!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return;}const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();renderCloudStatus();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){if(cloudMode)stagePendingClicks();save();lastClickSave=Date.now();}});
+    if(new URLSearchParams(location.search).has("account_banned")){accountBlocked=true;showAccountNotice({message:"This account has been banned."});}
+    pileEl.addEventListener("click",event=>{if(accountBlocked||account.moderation){toast("This account cannot use verified gameplay right now.");return;}if(cloudMode&&!account.username){toast("Cloud account is reconnecting. Please try again shortly.");return;}const value=clickValue();addMoney(value);state.totalClicks++;if(cloudMode){pendingClicks++;scheduleClickFlush();renderCloudStatus();}effect(value,event);playTone();checkAchievements();renderTop();if(Date.now()-lastClickSave>2000){if(cloudMode)stagePendingClicks();save();lastClickSave=Date.now();}});
     $("goldenBill").addEventListener("click",claimGolden);
     $("boosterDrop").addEventListener("click",claimBoosterDrop);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));

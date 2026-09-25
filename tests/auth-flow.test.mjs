@@ -34,6 +34,7 @@ test("Google callback creates a stable account, username is unique, and sign out
   database.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
+  database.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8"));
   const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
   const jwk={...await crypto.subtle.exportKey("jwk",keys.publicKey),kid:"test-key",use:"sig"};
   const env={DB:d1(database),SESSION_SECRET:"a-secret-long-enough-for-tests",GOOGLE_CLIENT_ID:"client-test",GOOGLE_CLIENT_SECRET:"secret-test",PUBLIC_SITE_URL:origin};
@@ -67,7 +68,7 @@ test("Google callback creates a stable account, username is unique, and sign out
   try{
     const cookie=await login();
     const initial=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:cookie}}),env);
-    assert.deepEqual(await initial.json(),{authenticated:true,username:null,needsUsername:true});
+    const initialAccount=await initial.json();assert.equal(initialAccount.authenticated,true);assert.equal(initialAccount.username,null);assert.equal(initialAccount.needsUsername,true);assert.match(initialAccount.userId,/^[0-9a-f-]{36}$/);
     const check=await worker.fetch(new Request(origin+"/api/username/check",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"CashKing92"})}),env);
     assert.equal((await check.json()).available,true);
     const chosen=await worker.fetch(new Request(origin+"/api/username",{method:"POST",headers:{Cookie:cookie,Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({username:"CashKing92"})}),env);
@@ -109,7 +110,7 @@ test("Google callback creates a stable account, username is unique, and sign out
     assert.equal((await afterSignout.json()).authenticated,false);
     const again=await login();
     const returning=await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:again}}),env);
-    assert.deepEqual(await returning.json(),{authenticated:true,username:"CashKing92",needsUsername:false});
+    assert.deepEqual(await returning.json(),{authenticated:true,username:"CashKing92",needsUsername:false,userId});
     assert.equal(database.prepare("SELECT id FROM users WHERE google_subject=?").get(subject).id,userId);
     const resumed=await (await worker.fetch(new Request(origin+"/api/progress/snapshot",{headers:{Cookie:again}}),env)).json();
     assert.ok(resumed.totalPlaytime>=29);
@@ -124,6 +125,16 @@ test("Google callback creates a stable account, username is unique, and sign out
     assert.equal(data.players.length,1);
     assert.equal(data.players[0].username,"CashKing92");
     assert.equal(data.me,null);
+    database.prepare("INSERT INTO moderation_state(user_id,banned_at_ms,banned_by,ban_reason,updated_at_ms) VALUES(?,?,?,?,?)").run(userId,Date.now(),userId,"Moderation test",Date.now());
+    database.prepare("DELETE FROM sessions WHERE user_id=?").run(userId);
+    assert.equal((await (await worker.fetch(new Request(origin+"/api/account",{headers:{Cookie:again}}),env)).json()).authenticated,false);
+    subject="google-subject-one";
+    const blockedStart=await worker.fetch(new Request(origin+"/api/auth/google/start"),env);
+    const blockedUrl=new URL(blockedStart.headers.get("Location"));nonce=blockedUrl.searchParams.get("nonce");
+    const blockedCallback=new URL(origin+"/api/auth/google/callback");blockedCallback.searchParams.set("state",blockedUrl.searchParams.get("state"));blockedCallback.searchParams.set("code","test-code");
+    const blocked=await worker.fetch(new Request(blockedCallback,{headers:{Cookie:blockedStart.headers.get("Set-Cookie").split(";")[0]}}),env);
+    assert.equal(blocked.status,302);assert.equal(new URL(blocked.headers.get("Location")).searchParams.get("account_banned"),"1");
+    assert.equal(database.prepare("SELECT count(*) AS n FROM sessions WHERE user_id=?").get(userId).n,0);
   }finally{globalThis.fetch=originalFetch;database.close();}
 });
 
@@ -133,6 +144,7 @@ test("leaderboard is public, ordered, limited to 30, and returns an outside play
   db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8"));
   const now=Date.now();
   const user=db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES(?,?,?,?,1)");
   const score=db.prepare("INSERT INTO progress(user_id,last_accrual_ms,lifetime_cash,rebirths) VALUES(?,?,?,?)");

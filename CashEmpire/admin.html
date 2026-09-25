@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#11251c"><title>Administration · ClickTheCash</title><link rel="stylesheet" href="style.css?v=admin-1"><link rel="stylesheet" href="admin.css?v=admin-1"><script src="admin.js?v=admin-1" defer></script></head>
+<body class="admin-page"><header class="admin-header"><a href="/" class="admin-brand"><span class="brand-mark">$</span><span>ClickTheCash <small>ADMINISTRATION</small></span></a><span id="adminIdentity"></span><a href="/">Back to game</a></header>
+<main id="adminApp" class="admin-app" hidden><nav class="admin-tabs" aria-label="Admin sections"><button data-view="dashboard" class="active">Dashboard</button><button data-view="players">Players</button><button data-view="moderation">Moderation</button><button data-view="boosts">Boosts</button><button data-view="audit">Audit log</button><button data-view="roles" id="rolesTab" hidden>Roles</button></nav>
+<section id="dashboard" class="admin-section"><h1>Dashboard</h1><div id="dashboardCards" class="admin-cards"></div></section>
+<section id="players" class="admin-section" hidden><h1>Players</h1><form id="searchForm" class="admin-search"><label for="playerSearch">Username or exact user ID</label><div><input id="playerSearch" required minlength="2" maxlength="64" autocomplete="off"><button type="submit">Search</button></div></form><div id="searchResults" class="admin-results"></div><div id="playerDetail" class="admin-detail" hidden></div></section>
+<section id="moderation" class="admin-section" hidden><h1>Moderation</h1><p class="admin-help">Select a player in Players first. Changes are recorded in the audit log.</p><div id="moderationForms"></div></section>
+<section id="boosts" class="admin-section" hidden><h1>Boosts and grants</h1><p class="admin-help">Select a player in Players first. All boosts are calculated on the server.</p><div id="boostForms"></div></section>
+<section id="audit" class="admin-section" hidden><h1>Audit log</h1><div id="auditEntries"></div></section>
+<section id="roles" class="admin-section" hidden><h1>Admin roles</h1><p class="admin-help">Only the owner can grant or remove admin and moderator roles. The owner role is created separately in D1.</p><div id="roleEntries"></div><div id="roleForm"></div></section></main>
+<div id="adminMessage" class="admin-message" role="status" aria-live="polite">Checking administrator access…</div>
+</body></html>

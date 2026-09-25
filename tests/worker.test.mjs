@@ -93,7 +93,9 @@ test("rebirth, golden reward, and entitlement use server-calculated values",()=>
 test("username validation rejects duplicates by normalization and obfuscation",()=>{
   assert.deepEqual(validateUsername("CashKing92"),{ok:true,username:"CashKing92",normalized:"cashking92"});
   assert.equal(validateUsername("cashking92").normalized,validateUsername("CASHKING92").normalized);
-  for(const value of ["ad_min","ADMIN","ＡＤＭＩＮ","b4dw0rd","baaaadword","b.a.d.w.o.r.d","\u200bad_m_in","a b","a","a".repeat(21),"pоrn"]){
+  assert.equal(validateUsername("SkilledTrader").ok,true);
+  assert.equal(validateUsername("SussexCapital").ok,true);
+  for(const value of ["ad_min","ADMIN","ＡＤＭＩＮ","b4dw0rd","baaaadword","b.a.d.w.o.r.d","\u200bad_m_in","a b","a","a".repeat(21),"pоrn","k_k_k","n1gg3r","n_i_g_g_e_r"]){
     assert.equal(validateUsername(value).ok,false,value);
   }
 });
@@ -216,6 +218,7 @@ test("additive migration retains an existing account and progress",()=>{
   db.prepare("INSERT INTO progress(user_id,balance,lifetime_cash,last_accrual_ms) VALUES('old',1234,5678,1)").run();
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8"));
   const row=db.prepare("SELECT * FROM progress WHERE user_id='old'").get();
   assert.equal(row.balance,1234);assert.equal(row.lifetime_cash,5678);
   assert.equal(row.playtime_ms,0);assert.equal(row.booster_slots_unlocked,1);

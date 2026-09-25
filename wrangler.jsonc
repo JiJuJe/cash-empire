@@ -23,7 +23,8 @@
       "name": "GAME_API_LIMITER",
       "namespace_id": "2026092501",
       "simple": { "limit": 1200, "period": 60 }
-    }
+    },
+    { "name": "ADMIN_API_LIMITER", "namespace_id": "2026092502", "simple": { "limit": 120, "period": 60 } }
   ],
 
   "d1_databases": [

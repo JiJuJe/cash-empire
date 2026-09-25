@@ -8,8 +8,11 @@ const BLOCKED=[
   "badword","fuck","fucking","shit","bitch","cunt","dick","pussy","porn","sex","nude",
   "rape","rapist","kill","murder","terror","nazi","hitler","racist","scam","phish",
   "fraud","giveaway","freecash","free_money","password","creditcard","suicide",
-  "nigger","faggot","retard","whitepower","heil","isis","pedo","childporn","groomer","bombthreat"
+  "nigger","faggot","retard","whitepower","heil","isis","pedo","childporn","groomer","bombthreat",
+  "heilhitler","whitegenocide","racewar","ethniccleansing","gasjews","killjews","killmuslims","killblacks"
 ];
+const CONTEXTUAL=new Set(["kill","sex","nude","murder","terror"]);
+const HATE=new Set(["nigger","faggot","whitepower","heilhitler","whitegenocide","racewar","ethniccleansing","gasjews","killjews","killmuslims","killblacks"]);
 const json=(value,status=200)=>Response.json(value,{status,headers:{"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
 const bytesToHex=a=>Array.from(a,b=>b.toString(16).padStart(2,"0")).join("");
 const base64url=a=>btoa(String.fromCharCode(...a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
@@ -70,8 +73,8 @@ export function validateUsername(input){
   if(!/^[A-Za-z0-9_]+$/.test(value))return {ok:false,message:"Invalid characters"};
   const normalized=value.toLowerCase();
   const skeleton=moderationKey(value);
-  if(/k{3,}/.test(normalized)||RESERVED.has(normalized)||RESERVED.has(skeleton)||[...RESERVED].some(x=>skeleton.startsWith(x))||
-     BLOCKED.some(x=>skeleton.includes(moderationKey(x))))return {ok:false,message:"That username is not allowed"};
+  if(/k{3,}/.test(normalized.replace(/_/g,""))||RESERVED.has(normalized)||RESERVED.has(skeleton)||[...RESERVED].some(x=>skeleton.startsWith(x))||
+     BLOCKED.some(x=>{const key=moderationKey(x);if(CONTEXTUAL.has(x))return normalized.split("_").some(part=>moderationKey(part)===key);if(skeleton.includes(key))return true;return HATE.has(x)&&skeleton.replace(/(.)\1+/g,"$1").includes(key.replace(/(.)\1+/g,"$1"));}))return {ok:false,message:"That username is not allowed"};
   return {ok:true,username:value,normalized};
 }
 async function throttle(env,request,key,max=15){
@@ -87,9 +90,9 @@ export async function readSession(request,env){
   if(!env.DB)return null;
   const token=cookieValue(request,new URL(request.url).protocol==="https:"?"__Host-ce_session":"ce_dev_session");
   if(!token||!/^[A-Za-z0-9_-]{40,60}$/.test(token))return null;
-  const row=await env.DB.prepare(`SELECT u.id,u.username,u.username_set,s.expires_at_ms
-    FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?`).bind(await digest(token)).first();
-  return row&&row.expires_at_ms>Date.now()?row:null;
+  const row=await env.DB.prepare(`SELECT u.id,u.username,u.username_set,s.expires_at_ms,m.banned_at_ms,m.suspended_until_ms,m.suspension_reason
+    FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN moderation_state m ON m.user_id=u.id WHERE s.token_hash=?`).bind(await digest(token)).first();
+  return row&&row.expires_at_ms>Date.now()&&!row.banned_at_ms?row:null;
 }
 async function verifyGoogleIdToken(token,env,nonce){
   if(typeof token!=="string"||token.length>10000)throw Error("Invalid ID token");
@@ -149,6 +152,8 @@ async function googleCallback(request,env){
     catch(_){user=await env.DB.prepare("SELECT id FROM users WHERE google_subject=?").bind(subject).first();}
   }
   if(!user)throw Error("Account creation failed");
+  const moderation=await env.DB.prepare("SELECT banned_at_ms FROM moderation_state WHERE user_id=?").bind(user.id).first();
+  if(moderation?.banned_at_ms){const headers=new Headers({Location:siteUrl(env)+"/?account_banned=1","Cache-Control":"no-store"});headers.append("Set-Cookie",flowCookie(request,"",0));return new Response(null,{status:302,headers});}
   await env.DB.prepare("UPDATE users SET last_seen_at_ms=? WHERE id=?").bind(now,user.id).run();
   const session=randomToken();
   await env.DB.prepare("DELETE FROM sessions WHERE expires_at_ms < ?").bind(now).run();
@@ -161,6 +166,7 @@ async function googleCallback(request,env){
 }
 async function usernameRoute(request,env,user,checkOnly){
   if(!user)return json({error:"Sign in required."},401);
+  if(user.suspended_until_ms>Date.now())return json({error:"Your account is temporarily suspended.",expiresAtMs:user.suspended_until_ms,reason:user.suspension_reason},403);
   if(!sameOrigin(request))return json({error:"Invalid request origin."},403);
   if(!await throttle(env,request,(checkOnly?"username-check:":"username-set:")+user.id,checkOnly?60:8))return json({error:"Try again shortly."},429);
   let body;
@@ -183,7 +189,9 @@ export async function handleAuthRequest(request,env){
   if(path==="/api/auth/google/callback"&&request.method==="GET")return googleCallback(request,env);
   if(path==="/api/account"&&request.method==="GET"){
     const user=await readSession(request,env);
-    return json({authenticated:Boolean(user),username:user?.username_set?user.username:null,needsUsername:Boolean(user&&!user.username_set)});
+    const account={authenticated:Boolean(user),username:user?.username_set?user.username:null,needsUsername:Boolean(user&&!user.username_set),userId:user?.id||null};
+    if(user?.suspended_until_ms>Date.now())account.moderation={status:"suspended",message:"Your account is temporarily suspended.",expiresAtMs:user.suspended_until_ms,reason:user.suspension_reason};
+    return json(account);
   }
   if(path==="/api/auth/signout"&&request.method==="POST"){
     if(!sameOrigin(request))return json({error:"Invalid request origin."},403);
