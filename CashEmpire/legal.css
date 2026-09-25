@@ -1,0 +1,25 @@
+:root{color-scheme:dark;font-family:Helvetica,Arial,"Segoe UI",sans-serif;background:#10261d;color:#f7f3e5}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:radial-gradient(circle at 50% 0,#204532 0,#10261d 42%);line-height:1.65}
+a{color:#f0ca79;text-underline-offset:3px}
+a:focus-visible{outline:3px solid #f0ca79;outline-offset:4px;border-radius:3px}
+.legal-header,.legal-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;max-width:880px;margin:auto;padding:20px 28px}
+.legal-header{border-bottom:1px solid #3c6449}
+.brand{display:inline-flex;align-items:center;gap:11px;color:#f7f3e5;text-decoration:none;font-size:17px;font-weight:800;letter-spacing:.08em}
+.brand-mark{display:grid;place-items:center;width:37px;height:37px;border-radius:9px;background:linear-gradient(145deg,#ffe398,#c39643);color:#20402c;font-size:24px;font-weight:900}
+.back-link{font-size:13px;font-weight:700;white-space:nowrap}
+.legal-page{max-width:760px;margin:0 auto;padding:44px 28px 70px}
+.eyebrow{margin:0 0 8px;color:#e6be67;font-size:11px;font-weight:800;letter-spacing:.16em}
+h1{margin:0;font-size:clamp(34px,6vw,56px);line-height:1.12;letter-spacing:-.04em}
+.lede{max-width:650px;margin:16px 0 34px;color:#c3d6c4;font-size:18px;line-height:1.5}
+section{padding:22px 0;border-top:1px solid #365c43}
+h2{margin:0 0 11px;font-size:21px;line-height:1.25}
+p{margin:0 0 12px;color:#d9e4d8}
+p:last-child{margin-bottom:0}
+ul{margin:0 0 13px;padding-left:23px;color:#d9e4d8}
+li{padding:3px 0}
+strong{color:#f0ca79;font-weight:750;overflow-wrap:anywhere}
+.legal-footer{justify-content:flex-start;border-top:1px solid #3c6449;font-size:13px}
+.legal-footer a[aria-current="page"]{color:#f7f3e5;text-decoration:none;font-weight:800}
+@media(max-width:560px){.legal-header,.legal-footer{padding:16px}.brand{font-size:13px}.brand-mark{width:31px;height:31px;font-size:20px}.back-link{font-size:12px}.legal-page{padding:32px 18px 50px}.lede{font-size:16px}section{padding:19px 0}h2{font-size:19px}}

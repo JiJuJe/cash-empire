@@ -408,3 +408,6 @@ h1,h2,h3,p{margin-top:0}
 @media(max-width:600px){
   .account-controls a,.account-controls>button,.fit-screen-toggle{min-height:32px}
 }
+.site-footer{display:flex;justify-content:center;gap:20px;padding:10px 18px;border-top:1px solid var(--line);background:#10271f;font-size:11px;font-weight:750}
+.site-footer a{color:var(--muted);text-decoration:none}
+.site-footer a:hover,.site-footer a:focus-visible{color:var(--gold);text-decoration:underline}
