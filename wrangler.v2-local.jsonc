@@ -1,0 +1,26 @@
+{
+  "name": "clickthecash-v2-local",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-09-24",
+  "vars": {
+    "PUBLIC_SITE_URL": "http://localhost:8788"
+  },
+  "assets": {
+    "directory": "./CashEmpire",
+    "binding": "ASSETS",
+    "html_handling": "drop-trailing-slash",
+    "run_worker_first": ["/api/*"]
+  },
+  "ratelimits": [
+    {"name":"GAME_API_LIMITER","namespace_id":"2026092601","simple":{"limit":1200,"period":60}},
+    {"name":"ADMIN_API_LIMITER","namespace_id":"2026092602","simple":{"limit":120,"period":60}}
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "clickthecash-v2-local",
+      "database_id": "00000000-0000-4000-8000-000000000002",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
