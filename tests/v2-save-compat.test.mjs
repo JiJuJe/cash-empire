@@ -12,7 +12,7 @@ const statement = (start, end) => {
   return source.slice(from, to);
 };
 
-test('V2 reads a representative V1 guest save without changing progress', () => {
+test('V2 resets legacy guest progress once while preserving protected inventory', () => {
   assert.match(source, /SAVE_KEY = "cash-empire-save-v1"/);
   const code = [
     statement('  const BUSINESS = [', '  const CLICK_UPGRADES = ['),
@@ -24,7 +24,7 @@ test('V2 reads a representative V1 guest save without changing progress', () => 
     statement('  const PRESTIGE =', '  const SUFFIXES ='),
     statement('  const defaultState =', '  let state ='),
     source.match(/^  const safeNumber =.*;$/m)?.[0] || '',
-    statement('  function normalize(raw)', '  function load()'),
+    statement('  function migratePreResetSave(raw)', '  function load()'),
     'globalThis.normalizeSave = normalize;'
   ].join('\n');
   const context = {Date, Math, Number, Object, Array, Set, Error};
@@ -41,17 +41,20 @@ test('V2 reads a representative V1 guest save without changing progress', () => 
     settings: {animations: false, particles: false}
   };
   const result = context.normalizeSave(legacy);
-  for (const key of ['money', 'runEarned', 'lifetime', 'rebirths', 'empireTotal', 'empireSpent', 'totalClicks'])
-    assert.equal(result[key], legacy[key], key);
+  assert.equal(result.money, 1000000);
+  for (const key of ['runEarned', 'lifetime', 'rebirths', 'empireTotal', 'empireSpent', 'totalClicks', 'diamonds'])
+    assert.equal(result[key], 0, key);
   for (const key of ['collector', 'lemonade', 'bank'])
-    assert.equal(result.businesses[key], legacy.businesses[key], key);
-  assert.equal(result.businessRevenue.collector, legacy.businessRevenue.collector);
-  assert.deepEqual(Array.from(result.upgrades), legacy.upgrades);
-  assert.deepEqual(Array.from(result.achievements), legacy.achievements);
-  assert.deepEqual(Array.from(result.prestigeUpgrades), legacy.prestigeUpgrades);
+    assert.equal(result.businesses[key], 0, key);
+  assert.equal(result.businessRevenue.collector, 0);
+  assert.deepEqual(Array.from(result.upgrades), []);
+  assert.deepEqual(Array.from(result.achievements), []);
+  assert.deepEqual(Array.from(result.prestigeUpgrades), []);
   assert.equal(result.boosterInventory.coinPurse, 2);
   assert.equal(result.boosterInventory.richInvestor, 1);
   assert.deepEqual(Array.from(result.equippedBoosters.slice(0, 2)), legacy.equippedBoosters);
   assert.equal(result.settings.animations, false);
   assert.equal(result.settings.particles, false);
+  assert.equal(result.globalResetVersion, 2);
+  assert.equal(context.normalizeSave(result).money, 1000000);
 });

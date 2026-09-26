@@ -253,9 +253,6 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     const cost=PRESTIGE_COST[action.upgradeId];
     if(!cost||s.prestige.includes(action.upgradeId)||cost>s.empirePoints-s.empireSpent)throw Error("Investment unavailable.");
     s.empireSpent+=cost;s.prestige.push(action.upgradeId);
-    if(action.upgradeId==="starterCapital")s.balance=capped(s.balance+250000);
-    if(action.upgradeId==="quickCollectors"){s.businesses.collector+=5;s.businessesPurchased+=5;}
-    if(action.upgradeId==="automation"){s.businesses.collector+=10;s.businesses.lemonade+=5;s.businessesPurchased+=15;}
   }else if(action.type==="unlock_slot"){
     const next=s.slotsUnlocked+1;
     if(next>4||action.slot!==next||SLOT_PRICES[next]>s.balance)throw Error("Booster slot unavailable.");
@@ -310,17 +307,11 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
   }else if(action.type==="rebirth"){
     const gain=rebirthPoints(s);
     if(gain<1)throw Error("Rebirth unavailable.");
-    s.empirePoints+=gain;s.rebirths++;
-    s.balance=1000000;s.lifetime=0;s.runEarned=0;s.diamonds=0;
-    s.upgrades=[];s.prestige=[];s.empireSpent=0;
-    s.totalClicks=0;s.businessesPurchased=0;s.highestRate=0;s.businessRevenue={};
-    s.totalPlaytimeMs=0;s.lastHeartbeatMs=now;s.nextDropPlaytimeMs=DROP_INTERVAL_MS;s.pendingDropUntilMs=0;
-    s.rushUntilMs=0;s.rushMultiplier=7;s.pendingBillTier=null;s.pendingBillUntilMs=0;s.lastGoldenMs=now;s.billClaims={};
-    s.achievements=[];s.achievementClaims=[];
+    s.empirePoints+=gain;s.rebirths++;s.balance=s.prestige.includes("starterCapital")?250:0;
+    s.runEarned=0;s.upgrades=[];s.rushUntilMs=0;s.pendingBillTier=null;s.pendingBillUntilMs=0;
     s.businesses=Object.fromEntries(BUSINESS.map(b=>[b.id,0]));
-    s.event={type:"rebirth",gain};
-    // Keep the click receipt ledger, booster inventory, crate inventory and cosmetics.
-    // Clearing receipts would let a retried checkpoint grant old clicks twice.
+    if(s.prestige.includes("quickCollectors"))s.businesses.collector=5;
+    if(s.prestige.includes("automation")){s.businesses.collector=10;s.businesses.lemonade=5;}
   }else throw Error("Unknown progress action.");
   if(!Number.isFinite(s.balance)||!Number.isFinite(s.lifetime))throw Error("Invalid progress.");
   s.highestRate=Math.max(s.highestRate,businessRate(s,entitled,now));
@@ -454,7 +445,7 @@ function progressSummary(s,entitled){
     empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
     prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
     boosterInventory:s.boosterInventory,equippedBoosters:s.equipped,boosterSlotsUnlocked:s.slotsUnlocked,
-    premiumBoosterSlots:s.premiumSlots||[],nextDropPlaytimeMs:s.nextDropPlaytimeMs,pendingDropUntilMs:s.pendingDropUntilMs,
+    premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
     pendingBillTier:s.pendingBillUntilMs>Date.now()?s.pendingBillTier:null,pendingBillUntilMs:s.pendingBillUntilMs,
     billClaims:s.billClaims,achievements:s.achievements,achievementClaims:s.achievementClaims,
     crateInventory:s.crateInventory,freeCrateClaims:s.freeCrateClaims,freeCrateStatus:freeCrateStatus(s.freeCrateClaims,Date.now()),rewardCosmetics:s.rewardCosmetics,businessRevenue:s.businessRevenue,highestRate:s.highestRate,

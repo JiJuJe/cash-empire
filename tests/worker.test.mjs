@@ -81,7 +81,7 @@ test("rebirth, golden reward, and entitlement use server-calculated values",()=>
   const reborn=testing.applyAction(progress({runEarned:10000000}),{type:"rebirth"},100000,false);
   assert.equal(reborn.rebirths,1);
   assert.equal(reborn.empirePoints,3);
-  assert.equal(reborn.balance,1000000);
+  assert.equal(reborn.balance,0);
   const premium=testing.applyAction(progress(),{type:"click_batch",count:1},100000,true);
   assert.equal(premium.balance,1002);
   assert.equal(testing.businessRate(progress({businesses:{...businesses,collector:10}}),true),2);
@@ -153,18 +153,18 @@ test("webhook signature rejects tampering",async()=>{
   assert.equal(await testing.verifyStripeSignature(raw+"x","t="+timestamp+",v1="+signature,"whsec_test"),false);
 });
 
-test("Rebirth points are per-run and the new run starts from one million cash",()=>{
+test("Rebirth points are per-run, permanent multiplier is additive, and early investments survive",()=>{
   for(const [earned,points] of [[999999,0],[1000000,1],[4000000,2],[9000000,3],[100000000,10]])
     assert.equal(testing.rebirthPoints(progress({runEarned:earned,empirePoints:500})),points);
   const old=progress({runEarned:1000000,rebirths:2,prestige:["starterCapital","quickCollectors","clickTraining","businessNetwork","bulkBuyer","investor"],empirePoints:30,empireSpent:28});
   const next=testing.applyAction(old,{type:"rebirth"},100000,false);
-  assert.equal(next.rebirths,3);assert.equal(next.balance,1000000);assert.equal(next.businesses.collector,0);
-  assert.deepEqual(next.prestige,[]);assert.equal(next.empirePoints,31);assert.equal(next.empireSpent,0);
-  assert.ok(testing.clickRate(next,false)>1.3);assert.equal(testing.businessRate(next,false),0);
-  assert.equal(testing.discount(next),1);
+  assert.equal(next.rebirths,3);assert.equal(next.balance,250);assert.equal(next.businesses.collector,5);
+  assert.deepEqual(next.prestige,old.prestige);assert.equal(next.empirePoints,31);
+  assert.ok(testing.clickRate(next,false)>1.3);assert.ok(testing.businessRate(next,false)>0);
+  assert.equal(testing.discount(next),.97);
 });
 
-test("Rebirth requires this run's earnings, resets gameplay, and keeps boosters",()=>{
+test("Rebirth requires this run's earnings and preserves permanent progress",()=>{
   const before=progress({balance:5,runEarned:999999,lifetime:9000000,totalClicks:456,rebirths:2,
     businesses:{...businesses,collector:10},upgrades:["wallet"],achievements:["firstClick"],
     boosterInventory:{coinPurse:2},equipped:["coinPurse"],slotsUnlocked:2,totalPlaytimeMs:12345,
@@ -172,55 +172,18 @@ test("Rebirth requires this run's earnings, resets gameplay, and keeps boosters"
   assert.throws(()=>testing.applyAction(before,{type:"rebirth"},100000,false));
   before.runEarned=1000000;
   const after=testing.applyAction(before,{type:"rebirth"},100000,false);
-  assert.equal(after.rebirths,3);assert.equal(after.empirePoints,4);assert.equal(after.empireSpent,0);
-  assert.equal(after.balance,1000000);assert.equal(after.runEarned,0);
+  assert.equal(after.rebirths,3);assert.equal(after.empirePoints,4);assert.equal(after.empireSpent,1);
+  assert.equal(after.balance,0);assert.equal(after.runEarned,0);
   assert.equal(after.businesses.collector,0);assert.deepEqual(after.upgrades,[]);
-  assert.equal(after.lifetime,0);assert.equal(after.totalClicks,0);
-  assert.ok(!after.achievements.includes("firstClick"));
+  assert.equal(after.lifetime,9000000);assert.equal(after.totalClicks,456);
+  assert.ok(after.achievements.includes("firstClick"));
   assert.deepEqual(after.boosterInventory,{coinPurse:2});assert.deepEqual(after.equipped,["coinPurse"]);
-  assert.equal(after.slotsUnlocked,2);assert.equal(after.totalPlaytimeMs,0);
+  assert.equal(after.slotsUnlocked,2);assert.equal(after.totalPlaytimeMs,12345);
   for(const count of [0,1,2,3,10]){
     const state=progress({rebirths:count,empirePoints:0,businesses:{...businesses,collector:1}});
     assert.ok(Math.abs(testing.clickRate(state,false)-(1+count*.1))<1e-9);
     assert.ok(Math.abs(testing.businessRate(state,false)-.1*(1+count*.1))<1e-9);
   }
-});
-
-test("full Rebirth keeps paid and admin benefits while clearing gameplay counters",()=>{
-  const before=progress({balance:9000000,lifetime:50000000,runEarned:4000000,diamonds:350,
-    rebirths:4,empirePoints:25,empireSpent:20,prestige:["starterCapital","investor"],
-    businesses:{...businesses,collector:12},upgrades:["wallet"],totalClicks:9876,
-    businessesPurchased:12,highestRate:123,businessRevenue:{collector:4567},
-    totalPlaytimeMs:900000,lastHeartbeatMs:100000,nextDropPlaytimeMs:1200000,
-    billClaims:{golden:6},achievements:["earn-100"],achievementClaims:["earn-100"],
-    crateInventory:{wood:2,royal:1},freeCrateClaims:{wood:"2026-09-26"},rewardCosmetics:["emerald_pile"],
-    boosterInventory:{coinPurse:2},equipped:["coinPurse"],slotsUnlocked:2,
-    premiumSlots:[5],adminEffects:[{kind:"total",multiplier:2,expires_at_ms:null}]});
-  const after=testing.applyAction(before,{type:"rebirth"},100000,false);
-  assert.equal(after.balance,1000000);assert.equal(after.lifetime,0);assert.equal(after.runEarned,0);
-  assert.equal(after.diamonds,0);assert.equal(after.totalClicks,0);assert.equal(after.businessesPurchased,0);
-  assert.equal(after.highestRate,0);assert.equal(after.totalPlaytimeMs,0);
-  assert.deepEqual(after.businessRevenue,{});assert.deepEqual(after.businesses,businesses);
-  assert.deepEqual(after.upgrades,[]);assert.deepEqual(after.prestige,[]);assert.equal(after.empireSpent,0);
-  assert.deepEqual(after.billClaims,{});assert.deepEqual(after.achievementClaims,[]);
-  assert.deepEqual(after.crateInventory,before.crateInventory);
-  assert.deepEqual(after.freeCrateClaims,before.freeCrateClaims);
-  assert.deepEqual(after.rewardCosmetics,before.rewardCosmetics);
-  assert.deepEqual(after.boosterInventory,before.boosterInventory);
-  assert.deepEqual(after.equipped,before.equipped);assert.deepEqual(after.premiumSlots,before.premiumSlots);
-  assert.deepEqual(after.adminEffects,before.adminEffects);
-  assert.equal(after.rebirths,5);assert.equal(after.empirePoints,27);
-});
-
-test("former next-Rebirth investments grant their benefit in the current run",()=>{
-  let s=progress({empirePoints:50,empireSpent:0});
-  s=testing.applyAction(s,{type:"buy_prestige",upgradeId:"starterCapital"},100000,false);
-  assert.equal(s.balance,251000);
-  s=testing.applyAction(s,{type:"buy_prestige",upgradeId:"quickCollectors"},100000,false);
-  assert.equal(s.businesses.collector,5);
-  s=testing.applyAction(s,{type:"buy_prestige",upgradeId:"automation"},100000,false);
-  assert.equal(s.businesses.collector,15);assert.equal(s.businesses.lemonade,5);
-  assert.equal(s.businessesPurchased,20);
 });
 
 test("one-time Rebirth migration changes only Rebirth fields and concurrency version",()=>{
