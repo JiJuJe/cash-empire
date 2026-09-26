@@ -6,9 +6,10 @@
   <meta name="theme-color" content="#11251c">
   <meta name="description" content="ClickTheCash — build a business fortune, one tap at a time.">
   <title>ClickTheCash</title>
-  <link rel="stylesheet" href="style.css?v=ui-assets-1">
-  <script src="cloud-outbox.js?v=cloud-sync-2" defer></script>
-  <script src="script.js?v=ui-assets-1" defer></script>
+  <link rel="stylesheet" href="style.css?v=empire-2">
+  <script src="cloud-outbox.js?v=empire-2" defer></script>
+  <script src="wealth-progression.js?v=empire-2" defer></script>
+  <script src="script.js?v=empire-2" defer></script>
 </head>
 <body>
   <div class="game-shell">
@@ -23,7 +24,7 @@
           <div class="wealth-backdrop" aria-hidden="true"></div>
           <button id="moneyPile" class="money-pile wealth-0" type="button" aria-label="Collect cash from the wealth pile"></button>
           <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
-          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><img id="goldenBillArt" src="assets/ui/golden-bill.png" alt="" width="116" height="96" decoding="async"><span class="golden-fallback" aria-hidden="true">GOLDEN BILL</span><b id="goldenCountdown" class="event-countdown" aria-label="Seconds remaining">12</b></button><button id="boosterDrop" class="booster-drop" type="button" hidden aria-label="Claim Booster Drop"><span>◆</span><small>BOOSTER DROP</small><b id="dropCountdown" class="event-countdown">20</b></button><div id="burstLayer" class="burst-layer" aria-hidden="true"></div>
+          <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><img id="goldenBillArt" src="assets/bills/golden-bill.png" alt="" width="116" height="96" decoding="async"><span class="golden-fallback" aria-hidden="true">GOLDEN BILL</span><b id="goldenCountdown" class="event-countdown" aria-label="Seconds remaining">12</b></button><button id="boosterDrop" class="booster-drop" type="button" hidden aria-label="Claim Booster Drop"><span>◆</span><small>BOOSTER DROP</small><b id="dropCountdown" class="event-countdown">20</b></button><div id="burstLayer" class="burst-layer" aria-hidden="true"></div>
         </div>
         <div id="buffBar" class="buff-bar" aria-live="polite"></div>
         <div class="play-footer"><span class="eyebrow">LIFETIME EARNED</span><strong id="lifetime">$0</strong></div>
@@ -36,6 +37,7 @@
           <button class="tab" data-tab="achievements" type="button">ACHIEVEMENTS</button>
           <button class="tab" data-tab="prestige" type="button">REBIRTH</button>
           <button class="tab" data-tab="boosters" type="button">BOOSTERS</button>
+          <button class="tab" data-tab="cosmetics" type="button">COSMETICS</button>
           <button class="tab" data-feature="leaderboard" type="button">LEADERBOARD</button>
           <button class="tab" data-feature="store" type="button">STORE</button>
         </nav>
@@ -60,6 +62,7 @@
           <h3 class="tree-title">Early investments · 1–10 points</h3><div id="earlyPrestigeTree" class="prestige-tree"></div><h3 class="tree-title">Advanced investments</h3><div id="prestigeTree" class="prestige-tree"></div>
         </div>
         <div id="tab-boosters" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">RARE FINDS</span><h2>Boosters</h2></div></div><p class="section-intro">Drops can appear while you actively play. Equip one copy of each booster.</p><h3 class="tree-title">Equipment · 6 slots</h3><div id="boosterSlots" class="booster-slots"></div><h3 class="tree-title">Inventory</h3><div id="boosterInventory" class="booster-inventory"></div></div>
+        <div id="tab-cosmetics" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">YOUR LOOK, EVERYWHERE</span><h2>Cosmetics</h2></div></div><p class="section-intro">Choose a look for each slot. Equipped items follow your Google account.</p><div id="cosmeticsList" class="cosmetics-list"></div></div>
         </div>
         <section class="owned-panel world-panel" aria-label="Owned generator world">
           <div class="owned-heading"><div><span class="eyebrow">THE ENGINE OF YOUR EMPIRE</span><h2>Your business world</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>

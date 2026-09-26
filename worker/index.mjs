@@ -1,6 +1,7 @@
 import {readSession,handleAuthRequest} from "./auth.mjs";
 import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationMessage} from "./admin.mjs";
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
+import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID,COSMETIC_SLOTS,publicCatalog} from "./store-catalog.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -52,6 +53,10 @@ function loadProgress(row){
     slotsUnlocked:Math.max(1,Math.min(4,Number(row.booster_slots_unlocked)||1)),
     nextDropPlaytimeMs:Math.max(DROP_INTERVAL_MS,Number(row.next_drop_playtime_ms)||DROP_INTERVAL_MS),
     pendingDropUntilMs:Math.max(0,Number(row.pending_drop_until_ms)||0),rushUntilMs:Math.max(0,Number(row.rush_until_ms)||0),
+    rushMultiplier:Math.max(7,Number(row.rush_multiplier)||7),pendingBillTier:row.pending_bill_tier||null,
+    pendingBillUntilMs:Math.max(0,Number(row.pending_bill_until_ms)||0),billClaims:decodeJson(row.bill_claims_json||"{}",{}),
+    achievements:decodeJson(row.achievements_json||"[]",[]),highestRate:Math.max(0,Number(row.highest_rate)||0),
+    businessesPurchased:Math.max(Number(row.businesses_purchased)||0,Object.values(businesses).reduce((a,b)=>a+Math.max(0,Math.floor(b||0)),0)),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
     clickStreams:decodeJson(row.click_streams_json||"{}",{}),epoch:row.progress_epoch||0,version:row.version
@@ -63,6 +68,13 @@ function normalizeExtras(s){
   s.nextDropPlaytimeMs=Math.max(DROP_INTERVAL_MS,Number(s.nextDropPlaytimeMs)||DROP_INTERVAL_MS);
   s.pendingDropUntilMs=Math.max(0,Number(s.pendingDropUntilMs)||0);
   s.rushUntilMs=Math.max(0,Number(s.rushUntilMs)||0);
+  s.rushMultiplier=Math.max(7,Number(s.rushMultiplier)||7);
+  s.pendingBillUntilMs=Math.max(0,Number(s.pendingBillUntilMs)||0);
+  s.pendingBillTier=typeof s.pendingBillTier==="string"?s.pendingBillTier:null;
+  s.billClaims=s.billClaims&&typeof s.billClaims==="object"&&!Array.isArray(s.billClaims)?s.billClaims:{};
+  s.achievements=Array.isArray(s.achievements)?s.achievements:[];
+  s.highestRate=Math.max(0,Number(s.highestRate)||0);
+  s.businessesPurchased=Math.max(0,Math.floor(Number(s.businessesPurchased)||0));
   s.slotsUnlocked=Math.max(1,Math.min(4,Number(s.slotsUnlocked)||1));
   s.boosterInventory=s.boosterInventory&&typeof s.boosterInventory==="object"?s.boosterInventory:{};
   s.equipped=Array.isArray(s.equipped)?s.equipped.slice(0,6):[];
@@ -115,9 +127,24 @@ function advance(s,now,entitled){
   if(!offline&&s.rushUntilMs>start&&s.rushUntilMs<end)boundaries.push(s.rushUntilMs);
   boundaries.sort((a,b)=>a-b);
   let produced=0;
-  for(let i=1;i<boundaries.length;i++){const mid=(boundaries[i-1]+boundaries[i])/2;produced+=businessRate(s,entitled,mid)*(boundaries[i]-boundaries[i-1])/1000*(!offline&&mid<s.rushUntilMs?7:1);}
+  for(let i=1;i<boundaries.length;i++){const mid=(boundaries[i-1]+boundaries[i])/2;produced+=businessRate(s,entitled,mid)*(boundaries[i]-boundaries[i-1])/1000*(!offline&&mid<s.rushUntilMs?s.rushMultiplier:1);}
   award(s,produced*efficiency);
+  s.highestRate=Math.max(s.highestRate,businessRate(s,entitled,now));
   s.lastAccrualMs=now;
+}
+const BILL_TIERS=[
+  {id:"golden",weight:89,cash:1,rush:7,seconds:30},
+  {id:"emerald",weight:8,cash:2,rush:8,seconds:35},
+  {id:"diamond",weight:2,cash:4,rush:9,seconds:40},
+  {id:"pink_diamond",weight:.8,cash:8,rush:10,seconds:45},
+  {id:"obsidian",weight:.2,cash:16,rush:12,seconds:60}
+];
+function rollBillTier(random=Math.random,luck=1){
+  const boost=Math.min(2,Math.max(1,Math.pow(luck,.3)));
+  const weights=BILL_TIERS.map((tier,i)=>tier.weight*(i?boost:1));
+  let pick=Math.max(0,Math.min(.999999999,random()))*weights.reduce((a,b)=>a+b,0);
+  for(let i=0;i<weights.length;i++){pick-=weights[i];if(pick<0)return BILL_TIERS[i];}
+  return BILL_TIERS.at(-1);
 }
 function heartbeatState(s,now,active,random=Math.random){
   normalizeExtras(s);
@@ -125,6 +152,12 @@ function heartbeatState(s,now,active,random=Math.random){
   if(s.lastHeartbeatMs&&elapsed>0&&elapsed<=95000)s.totalPlaytimeMs+=Math.min(elapsed,65000);
   s.lastHeartbeatMs=active?now:0;
   if(!active)return;
+  if(s.pendingBillUntilMs&&now>=s.pendingBillUntilMs){s.pendingBillTier=null;s.pendingBillUntilMs=0;}
+  const frequency=(1+(s.prestige.includes("goldenRadar")?.1:0)+(s.prestige.includes("lucky")?.3:0)+bonus(s,"goldenFrequency"))*boostMultiplier(s.adminEffects,"luck",now);
+  if(!s.pendingBillTier&&now-s.lastGoldenMs>=180000/frequency&&random()<.35){
+    s.pendingBillTier=rollBillTier(random,boostMultiplier(s.adminEffects,"luck",now)).id;
+    s.pendingBillUntilMs=now+20000;
+  }
   if(s.pendingDropUntilMs&&now>=s.pendingDropUntilMs)s.pendingDropUntilMs=0;
   if(s.totalPlaytimeMs>=s.nextDropPlaytimeMs){
     s.nextDropPlaytimeMs+=DROP_INTERVAL_MS;
@@ -144,29 +177,49 @@ function upgradeFor(s,id){
       return {id,cost:Math.ceil(b.cost*count*costFactor),mult};
   return null;
 }
+function updateAchievements(s){
+  const owned=Object.values(s.businesses).reduce((a,b)=>a+b,0);
+  const bills=Object.values(s.billClaims||{}).reduce((a,b)=>a+(Number(b)||0),0);
+  const checks=[
+    ['earn',[1,100,1e4,1e6,1e9,1e12,1e15,1e18,1e21],s.lifetime],
+    ['click',[1,10,100,1000,10000,100000],s.totalClicks],
+    ['business',[1,10,50,250,1000,5000],owned],
+    ['rate',[1,10,100,1000,10000,100000,1e9,1e12],s.highestRate],
+    ['gold',[1,5,25,100],bills],
+    ['rebirth',[1,5,20,100],s.rebirths],
+    ['upgrade',[1,5,20,50],s.upgrades.length],
+    ['collector',[1,10,100,500],s.businesses.collector||0],
+    ['empire',[1,10,100],s.empirePoints]
+  ];
+  const unlocked=new Set(s.achievements);
+  for(const [prefix,levels,value] of checks)for(const target of levels)if(value>=target)unlocked.add(prefix+'-'+target);
+  s.achievements=[...unlocked];
+}
 const CLICK_BATCH_TECHNICAL_MAX=1000;
 function applyAction(current,action,now,entitled,random=Math.random,checkpointClicks=0){
   const s=normalizeExtras(structuredClone(current));
   advance(s,now,entitled);
-  if(checkpointClicks){award(s,clickRate(s,entitled,now)*checkpointClicks*(s.rushUntilMs>now?7:1));s.totalClicks+=checkpointClicks;}
+  if(checkpointClicks){award(s,clickRate(s,entitled,now)*checkpointClicks*(s.rushUntilMs>now?s.rushMultiplier:1));s.totalClicks+=checkpointClicks;}
   if(action.type==="click_checkpoint"){
     // The cumulative stream receipt lives in this same progress row.
   }else if(action.type==="click_batch"){
     const count=action.count;
     if(!Number.isInteger(count)||count<1||count>CLICK_BATCH_TECHNICAL_MAX)
       throw Error("Invalid click batch.");
-    award(s,clickRate(s,entitled,now)*count*(s.rushUntilMs>now?7:1));s.totalClicks+=count;
+    award(s,clickRate(s,entitled,now)*count*(s.rushUntilMs>now?s.rushMultiplier:1));s.totalClicks+=count;
   }else if(action.type==="golden"){
-    const frequency=(1+(s.prestige.includes("goldenRadar")?.1:0)+(s.prestige.includes("lucky")?.3:0)+bonus(s,"goldenFrequency"))*boostMultiplier(s.adminEffects,"luck",now);
-    if(now-s.lastGoldenMs<180000/frequency)throw Error("Golden Bill is not ready.");
+    const tier=BILL_TIERS.find(item=>item.id===s.pendingBillTier);
+    if(!tier||now>s.pendingBillUntilMs)throw Error("Bill is not ready.");
+    s.pendingBillTier=null;s.pendingBillUntilMs=0;
     s.lastGoldenMs=now;
-    if(random()<.35){
-      s.rushUntilMs=now+30000;s.event={type:"goldRush",until:s.rushUntilMs};
+    s.billClaims[tier.id]=(Number(s.billClaims[tier.id])||0)+1;
+    if(random()<Math.min(.55,.35+(tier.rush-7)*.04)){
+      s.rushUntilMs=now+tier.seconds*1000;s.rushMultiplier=tier.rush;s.event={type:"billRush",tier:tier.id,multiplier:tier.rush,seconds:tier.seconds,until:s.rushUntilMs};
     }else{
       const base=Math.max(500,businessRate(s,entitled,now)*180,clickRate(s,entitled,now)*100);
       const multiplier=.8+random()*.6;
-      const amount=base*multiplier*(1+(s.prestige.includes("goldenReserve")?.25:0)+bonus(s,"goldenCash"));
-      award(s,amount);s.event={type:"goldenCash",amount};
+      const amount=base*multiplier*tier.cash*(1+(s.prestige.includes("goldenReserve")?.25:0)+bonus(s,"goldenCash"));
+      award(s,amount);s.event={type:"billCash",tier:tier.id,amount};
     }
   }else if(action.type==="buy_business"){
     const b=BUSINESS.find(x=>x.id===action.businessId);
@@ -174,7 +227,7 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     if(!b||!Number.isInteger(quantity)||quantity<1||quantity>100)throw Error("Invalid business purchase.");
     const price=totalCost(b,s.businesses[b.id],quantity,discount(s));
     if(!Number.isFinite(price)||price>s.balance*(1+1e-12))throw Error("Not enough cash.");
-    s.balance=capped(s.balance-price);s.businesses[b.id]+=quantity;
+    s.balance=capped(s.balance-price);s.businesses[b.id]+=quantity;s.businessesPurchased+=quantity;
   }else if(action.type==="buy_upgrade"){
     const u=upgradeFor(s,action.upgradeId);
     if(!u||s.upgrades.includes(u.id)||u.cost>s.balance)throw Error("Upgrade unavailable.");
@@ -207,12 +260,14 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     const gain=rebirthPoints(s);
     if(gain<1)throw Error("Rebirth unavailable.");
     s.empirePoints+=gain;s.rebirths++;s.balance=s.prestige.includes("starterCapital")?250:0;
-    s.runEarned=0;s.upgrades=[];s.rushUntilMs=0;
+    s.runEarned=0;s.upgrades=[];s.rushUntilMs=0;s.pendingBillTier=null;s.pendingBillUntilMs=0;
     s.businesses=Object.fromEntries(BUSINESS.map(b=>[b.id,0]));
     if(s.prestige.includes("quickCollectors"))s.businesses.collector=5;
     if(s.prestige.includes("automation")){s.businesses.collector=10;s.businesses.lemonade=5;}
   }else throw Error("Unknown progress action.");
   if(!Number.isFinite(s.balance)||!Number.isFinite(s.lifetime))throw Error("Invalid progress.");
+  s.highestRate=Math.max(s.highestRate,businessRate(s,entitled,now));
+  updateAchievements(s);
   return s;
 }
 class ApiError extends Error{constructor(status,message){super(message);this.status=status;}}
@@ -272,6 +327,37 @@ async function hasDoubleMoney(env,userId){
   const row=await env.DB.prepare("SELECT 1 AS owned FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL").bind(userId).first();
   return Boolean(row);
 }
+async function storeOwnership(env,userId){
+  if(!userId)return {};
+  const rows=await env.DB.prepare("SELECT product_id FROM store_entitlements WHERE user_id=?").bind(userId).all();
+  const owned=Object.fromEntries((rows.results||[]).map(row=>[row.product_id,true]));
+  if(await hasDoubleMoney(env,userId))owned.double_money=true;
+  for(const slot of await premiumSlots(env,userId))owned['booster_slot_'+slot]=true;
+  return owned;
+}
+async function cosmeticsInventory(env,userId){
+  if(!userId)return {owned:[],loadout:{}};
+  const [owned,equipped]=await Promise.all([
+    env.DB.prepare("SELECT cosmetic_id FROM cosmetic_entitlements WHERE user_id=?").bind(userId).all(),
+    env.DB.prepare("SELECT slot,cosmetic_id FROM cosmetic_loadout WHERE user_id=?").bind(userId).all()
+  ]);
+  return {owned:(owned.results||[]).map(row=>row.cosmetic_id),loadout:Object.fromEntries((equipped.results||[]).map(row=>[row.slot,row.cosmetic_id]))};
+}
+async function equipCosmetic(request,env,user){
+  if(!user||!user.username_set)fail(401,"Choose a username first.");
+  sameOrigin(request);
+  const body=await readBody(request,["slot","cosmeticId"]);
+  if(!COSMETIC_SLOTS.includes(body.slot)||body.cosmeticId!==null&&typeof body.cosmeticId!=="string")fail(400,"Invalid cosmetic slot.");
+  if(body.cosmeticId!==null){
+    const cosmetic=COSMETIC_BY_ID.get(body.cosmeticId);
+    if(!cosmetic||cosmetic.slot!==body.slot)fail(400,"Invalid cosmetic.");
+    const owned=await env.DB.prepare("SELECT 1 AS owned FROM cosmetic_entitlements WHERE user_id=? AND cosmetic_id=?").bind(user.id,body.cosmeticId).first();
+    if(!owned)fail(403,"Cosmetic not owned.");
+    await env.DB.prepare("INSERT INTO cosmetic_loadout(user_id,slot,cosmetic_id,updated_at_ms) VALUES(?,?,?,?) ON CONFLICT(user_id,slot) DO UPDATE SET cosmetic_id=excluded.cosmetic_id,updated_at_ms=excluded.updated_at_ms")
+      .bind(user.id,body.slot,body.cosmeticId,Date.now()).run();
+  }else await env.DB.prepare("DELETE FROM cosmetic_loadout WHERE user_id=? AND slot=?").bind(user.id,body.slot).run();
+  return json(await cosmeticsInventory(env,user.id));
+}
 async function ensureProgress(env,userId,now){
   let row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(userId).first();
   if(row)return row;
@@ -303,27 +389,35 @@ async function getLeaderboard(request,env,user){
   return json({players,me,authenticated:Boolean(user)});
 }
 function progressSummary(s,entitled){
+  updateAchievements(s);
   return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,
-    ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?7:1),empirePoints:s.empirePoints,
+    ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?s.rushMultiplier:1),empirePoints:s.empirePoints,businessesPurchased:s.businessesPurchased,
     empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
     prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
     boosterInventory:s.boosterInventory,equippedBoosters:s.equipped,boosterSlotsUnlocked:s.slotsUnlocked,
     premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
-    rushUntilMs:s.rushUntilMs,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
+    pendingBillTier:s.pendingBillUntilMs>Date.now()?s.pendingBillTier:null,pendingBillUntilMs:s.pendingBillUntilMs,
+    billClaims:s.billClaims,achievements:s.achievements,highestRate:s.highestRate,
+    rushUntilMs:s.rushUntilMs,rushMultiplier:s.rushMultiplier,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
 }
 function updateStatement(env,s,oldVersion,entitled){
+  updateAchievements(s);
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
   return env.DB.prepare(`UPDATE progress SET balance=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
     total_clicks=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
     businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
-    pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,version=version+1 WHERE user_id=? AND version=?`).bind(
+    pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,
+    pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,highest_rate=?,businesses_purchased=?,
+    version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
       s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
-      (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),s.userId,oldVersion
+      (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),
+      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),s.highestRate,s.businessesPurchased,
+      s.userId,oldVersion
     );
 }
 async function premiumSlots(env,userId){
@@ -333,7 +427,7 @@ async function premiumSlots(env,userId){
 function initialProgress(userId,now){
   return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
-    pendingDropUntilMs:0,rushUntilMs:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
+    pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
     upgrades:[],prestige:[],clickStreams:{},epoch:0,version:0});
 }
 async function getProgress(env,user){
@@ -469,28 +563,36 @@ function paymentsConfigured(env){
 }
 async function storeStatus(request,env,user){
   if(env.DB)await infrastructureLimit(env,request,"store-status:"+(user?.id||"guest"));
-  const owned=user?await hasDoubleMoney(env,user.id):false;
-  return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements:{double_money:owned}});
+  const entitlements=env.DB?await storeOwnership(env,user?.id):{};
+  return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements,catalog:publicCatalog()});
 }
 async function beginCheckout(request,env,user){
   if(!paymentsConfigured(env))fail(503,"Payments are not available yet.");
-  if(!user||!user.username_set)fail(401,"Choose a username before buying 2x Money.");
+  if(!user||!user.username_set)fail(401,"Choose a username before buying.");
   sameOrigin(request);
   await rateLimit(env,request,"checkout:"+user.id,5);
-  await readBody(request,[]);
-  if(await hasDoubleMoney(env,user.id))fail(409,"Already owned.");
+  const body=await readBody(request,["productId"]);
+  const product=PRODUCT_BY_ID.get(body.productId);
+  if(!product)fail(400,"Unknown product.");
+  if((await storeOwnership(env,user.id))[product.id])fail(409,"Already owned.");
+  const pending=await env.DB.prepare("SELECT checkout_url,created_at_ms FROM store_purchases WHERE user_id=? AND product_id=? AND status='pending' ORDER BY created_at_ms DESC LIMIT 1")
+    .bind(user.id,product.id).first();
+  if(pending?.checkout_url&&Date.now()-pending.created_at_ms<86400000)return json({checkoutUrl:pending.checkout_url});
   const site=new URL(env.PUBLIC_SITE_URL);
   if(site.protocol!=="https:")fail(503,"Payment configuration is invalid.");
   const purchaseId=crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO store_purchases(id,user_id,product_id,amount_cents,currency,status,created_at_ms) VALUES(?,?,?,?,'eur','pending',?)")
+    .bind(purchaseId,user.id,product.id,product.priceCents,Date.now()).run();
   const params=new URLSearchParams();
   params.set("mode","payment");
   params.set("client_reference_id",user.id);
-  params.set("metadata[product_id]","double_money");
+  params.set("metadata[product_id]",product.id);
   params.set("metadata[purchase_id]",purchaseId);
+  params.set("metadata[user_id]",user.id);
   params.set("line_items[0][quantity]","1");
   params.set("line_items[0][price_data][currency]","eur");
-  params.set("line_items[0][price_data][unit_amount]","200");
-  params.set("line_items[0][price_data][product_data][name]","2x Money");
+  params.set("line_items[0][price_data][unit_amount]",String(product.priceCents));
+  params.set("line_items[0][price_data][product_data][name]",product.name);
   params.set("success_url",new URL("?purchase=success",site).href);
   params.set("cancel_url",new URL("?purchase=cancel",site).href);
   const response=await fetch("https://api.stripe.com/v1/checkout/sessions",{
@@ -501,7 +603,9 @@ async function beginCheckout(request,env,user){
   if(!response.ok)fail(502,"Payments are not available yet.");
   const session=await response.json();
   if(typeof session.id!=="string"||typeof session.url!=="string"||!session.url.startsWith("https://checkout.stripe.com/"))fail(502,"Invalid checkout response.");
-  await env.DB.prepare(`INSERT INTO purchases(id,user_id,product_id,provider,provider_session_id,amount_cents,currency,status,created_at_ms)
+  await env.DB.prepare("UPDATE store_purchases SET provider_session_id=?,checkout_url=? WHERE id=? AND user_id=? AND provider_session_id IS NULL")
+    .bind(session.id,session.url,purchaseId,user.id).run();
+  if(product.id==="double_money")await env.DB.prepare(`INSERT INTO purchases(id,user_id,product_id,provider,provider_session_id,amount_cents,currency,status,created_at_ms)
     VALUES(?,?,'double_money','stripe',?,200,'eur','pending',?)`).bind(purchaseId,user.id,session.id,Date.now()).run();
   return json({checkoutUrl:session.url});
 }
@@ -526,32 +630,47 @@ async function stripeWebhook(request,env){
   if(!["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(event.type))
     return json({received:true});
   if(!session||session.payment_status!=="paid")return json({received:true});
-  if(session.mode!=="payment"||session.currency!=="eur"||session.amount_total!==200||
-     session.metadata?.product_id!=="double_money"||typeof session.id!=="string"||
-     typeof session.client_reference_id!=="string")fail(400,"Invalid paid session.");
-  const purchase=await env.DB.prepare("SELECT id,user_id FROM purchases WHERE provider_session_id=? AND user_id=? AND product_id='double_money'")
+  const product=PRODUCT_BY_ID.get(session.metadata?.product_id);
+  if(session.mode!=="payment"||session.currency!=="eur"||!product||session.amount_total!==product.priceCents||
+     typeof session.id!=="string"||typeof session.client_reference_id!=="string")fail(400,"Invalid paid session.");
+  let purchase=await env.DB.prepare("SELECT id,user_id,product_id,amount_cents FROM store_purchases WHERE provider_session_id=? AND user_id=?")
     .bind(session.id,session.client_reference_id).first();
-  if(!purchase||session.metadata?.purchase_id!==purchase.id)fail(400,"Unknown checkout.");
+  const modern=Boolean(purchase);
+  if(!purchase&&product.id==="double_money")purchase=await env.DB.prepare("SELECT id,user_id,product_id,amount_cents FROM purchases WHERE provider_session_id=? AND user_id=?")
+    .bind(session.id,session.client_reference_id).first();
+  if(!purchase||purchase.product_id!==product.id||purchase.amount_cents!==product.priceCents||session.metadata?.purchase_id!==purchase.id||
+     (modern&&session.metadata?.user_id!==purchase.user_id))fail(400,"Unknown checkout.");
+  if(product.id==="double_money"){
+    const legacy=await env.DB.prepare("SELECT 1 AS found FROM purchases WHERE id=? AND provider_session_id=? AND user_id=?").bind(purchase.id,session.id,purchase.user_id).first();
+    if(!legacy)fail(409,"Checkout is still being prepared.");
+  }
   const seen=await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(event.id).first();
   if(seen)return json({received:true});
   const now=Date.now();
   await ensureProgress(env,purchase.user_id,now);
-  try {
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(event.id,now),
-      env.DB.prepare("UPDATE purchases SET status='paid',paid_at_ms=? WHERE id=?").bind(now,purchase.id),
-      env.DB.prepare(`UPDATE progress SET
+  const statements=[env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(event.id,now)];
+  if(modern)statements.push(env.DB.prepare("UPDATE store_purchases SET status='paid',paid_at_ms=? WHERE id=? AND status='pending'").bind(now,purchase.id));
+  if(product.id==="double_money"){
+    statements.push(env.DB.prepare("UPDATE purchases SET status='paid',paid_at_ms=? WHERE id=? AND status='pending'").bind(now,purchase.id));
+    statements.push(env.DB.prepare(`UPDATE progress SET
         balance=MIN(1e300,balance+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         last_accrual_ms=?,rate_per_second=MIN(1e300,rate_per_second*2),version=version+1
         WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL)`)
-        .bind(now,now,now,now,purchase.user_id,purchase.user_id),
-      env.DB.prepare(`INSERT INTO entitlements(user_id,entitlement,source_purchase_id,granted_at_ms)
-        VALUES(?,'double_money',?,?)
-        ON CONFLICT(user_id,entitlement) DO UPDATE SET source_purchase_id=excluded.source_purchase_id,
-        granted_at_ms=excluded.granted_at_ms,revoked_at_ms=NULL`).bind(purchase.user_id,purchase.id,now)
-    ]);
+        .bind(now,now,now,now,purchase.user_id,purchase.user_id));
+    statements.push(env.DB.prepare(`INSERT INTO entitlements(user_id,entitlement,source_purchase_id,granted_at_ms)
+      VALUES(?,'double_money',?,?) ON CONFLICT(user_id,entitlement) DO NOTHING`).bind(purchase.user_id,purchase.id,now));
+  }else{
+    statements.push(env.DB.prepare("INSERT OR IGNORE INTO store_entitlements(user_id,product_id,source_purchase_id,granted_at_ms) VALUES(?,?,?,?)")
+      .bind(purchase.user_id,product.id,purchase.id,now));
+    if(product.id==="booster_slot_5"||product.id==="booster_slot_6")statements.push(env.DB.prepare("INSERT OR IGNORE INTO booster_slot_entitlements(user_id,slot_number,provider_reference,granted_at_ms) VALUES(?,?,?,?)")
+      .bind(purchase.user_id,Number(product.id.slice(-1)),purchase.id,now));
+    for(const cosmeticId of Object.values(product.cosmetics||{}))statements.push(env.DB.prepare("INSERT OR IGNORE INTO cosmetic_entitlements(user_id,cosmetic_id,source_purchase_id,granted_at_ms) VALUES(?,?,?,?)")
+      .bind(purchase.user_id,cosmeticId,purchase.id,now));
+  }
+  try {
+    await env.DB.batch(statements);
   } catch(error) {
     const duplicate=await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(event.id).first();
     if(!duplicate)throw error;
@@ -582,6 +701,11 @@ export default {
       if(url.pathname==="/api/progress/action"&&request.method==="POST")return await postProgress(request,env,user);
       if(url.pathname==="/api/progress/heartbeat"&&request.method==="POST")return await postHeartbeat(request,env,user);
       if(url.pathname==="/api/progress/snapshot"&&request.method==="GET")return await getProgress(env,user);
+      if(url.pathname==="/api/cosmetics"&&request.method==="GET"){
+        if(!user||!user.username_set)fail(401,"Choose a username first.");
+        return json(await cosmeticsInventory(env,user.id));
+      }
+      if(url.pathname==="/api/cosmetics/equip"&&request.method==="POST")return await equipCosmetic(request,env,user);
       if(url.pathname==="/api/profile/username"&&request.method==="POST")fail(410,"Use account username setup.");
       if(url.pathname==="/api/store/checkout"&&request.method==="POST")return await beginCheckout(request,env,user);
       return json({error:"Not found."},404);
@@ -592,4 +716,4 @@ export default {
     }
   }
 };
-export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,rebirthPoints,heartbeatState,advance,discount,verifyStripeSignature,loadProgress};
+export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,rebirthPoints,heartbeatState,advance,discount,verifyStripeSignature,loadProgress,rollBillTier,BILL_TIERS};

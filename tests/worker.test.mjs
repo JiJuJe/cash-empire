@@ -56,7 +56,7 @@ test("two minutes of clicking, purchases and upgrades preserve legitimate batche
     const quantity=batch===0?10:batch===1?100:1;
     state=testing.applyAction(state,{type:"buy_business",businessId:business,quantity},now+100,false);
     if(batch===2)state=testing.applyAction(state,{type:"buy_upgrade",upgradeId:"wallet"},now+200,false);
-    if(batch===4)state=testing.applyAction(state,{type:"golden"},now+300,false);
+    if(batch===4){state.pendingBillTier="golden";state.pendingBillUntilMs=now+20000;state=testing.applyAction(state,{type:"golden"},now+300,false);}
   }
   assert.equal(state.totalClicks,48*24);
   assert.equal(state.businesses.collector,46);
@@ -85,7 +85,7 @@ test("rebirth, golden reward, and entitlement use server-calculated values",()=>
   const premium=testing.applyAction(progress(),{type:"click_batch",count:1},100000,true);
   assert.equal(premium.balance,1002);
   assert.equal(testing.businessRate(progress({businesses:{...businesses,collector:10}}),true),2);
-  const gold=testing.applyAction(progress(),{type:"golden"},200000,false,()=>.5);
+  const gold=testing.applyAction(progress({pendingBillTier:"golden",pendingBillUntilMs:210000}),{type:"golden"},200000,false,()=>.5);
   assert.equal(gold.balance,1550);
   assert.throws(()=>testing.applyAction(gold,{type:"golden"},201000,false));
 });
@@ -120,7 +120,9 @@ test("client-supplied totals are refused",async()=>{
 
 test("Store remains unavailable without a signed-in account or payment configuration",async()=>{
   const status=await worker.fetch(new Request("https://game.example/api/store/status"),{});
-  assert.deepEqual(await status.json(),{authenticated:false,paymentsAvailable:false,entitlements:{double_money:false}});
+  const catalog=await status.json();
+  assert.equal(catalog.authenticated,false);assert.equal(catalog.paymentsAvailable,false);
+  assert.equal(catalog.entitlements.double_money,undefined);assert.equal(catalog.catalog.length,13);
   const checkout=await worker.fetch(new Request("https://game.example/api/store/checkout",{method:"POST"}),{DB:{}});
   assert.equal(checkout.status,503);
 });
@@ -163,11 +165,11 @@ test("Rebirth points are per-run, permanent multiplier is additive, and early in
 });
 
 test("Golden Bill cash scales and Golden Rush lasts 30 seconds for clicks and production",()=>{
-  const base=progress({businesses:{...businesses,collector:100},balance:1000000,lifetime:1000000,runEarned:1000000});
+  const base=progress({businesses:{...businesses,collector:100},balance:1000000,lifetime:1000000,runEarned:1000000,pendingBillTier:"golden",pendingBillUntilMs:210000});
   const cash=testing.applyAction(base,{type:"golden"},200000,false,()=>.5);
-  assert.equal(cash.event.type,"goldenCash");assert.ok(cash.event.amount>=500);
+  assert.equal(cash.event.type,"billCash");assert.ok(cash.event.amount>=500);
   const rush=testing.applyAction(base,{type:"golden"},200000,false,()=>.1);
-  assert.equal(rush.event.type,"goldRush");assert.equal(rush.rushUntilMs,230000);
+  assert.equal(rush.event.type,"billRush");assert.equal(rush.rushUntilMs,230000);
   const during=testing.applyAction(rush,{type:"click_batch",count:1},200001,false);
   assert.ok(during.balance-rush.balance>=7);
   const ended=testing.applyAction(rush,{type:"click_batch",count:1},230001,false);
@@ -218,7 +220,7 @@ test("additive migration retains an existing account and progress",()=>{
   db.prepare("INSERT INTO progress(user_id,balance,lifetime_cash,last_accrual_ms) VALUES('old',1234,5678,1)").run();
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
-  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8"));
   const row=db.prepare("SELECT * FROM progress WHERE user_id='old'").get();
   assert.equal(row.balance,1234);assert.equal(row.lifetime_cash,5678);
   assert.equal(row.playtime_ms,0);assert.equal(row.booster_slots_unlocked,1);

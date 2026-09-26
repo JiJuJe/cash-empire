@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const r=stmts.map(x=>({meta:{changes:db.prepare(x.sql).run(...x.args).changes}}));db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const file of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql'])db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+  for(const file of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql'])db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','CloudPlayer',1,'cloudplayer',1)").run();
   const token='T'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -67,5 +67,17 @@ test('pending click checkpoints buy upgrades and Rebirth before resetting the ru
     const first=await x.post(rebirth);assert.equal(first.status,200);const after=await first.json();
     assert.equal(after.rebirths,1);assert.equal(after.empirePoints,1);assert.equal(after.totalClicks,102);
     const retry=await x.post(rebirth);assert.equal(retry.status,200);assert.equal((await retry.json()).rebirths,1);
+  }finally{x.db.close()}
+});
+test('two devices keep both a purchase and independent clicks in one account run',async()=>{
+  const x=await setup();try{
+    const pc=await x.post({actionId:'pc-buy-business-0001',type:'buy_business',businessId:'collector',quantity:1,clicks:[{streamId:'pc-device-stream-0001',total:100}]});
+    assert.equal(pc.status,200);
+    const phone=await x.post({type:'click_checkpoint',clicks:[{streamId:'phone-device-stream-01',total:50}]});
+    assert.equal(phone.status,200);
+    const viewed=await (await x.get('/api/progress/snapshot')).json();
+    assert.equal(viewed.businesses.collector,1);
+    assert.equal(viewed.totalClicks,151);
+    assert.equal(x.db.prepare("SELECT COUNT(*) AS n FROM progress WHERE user_id='u'").get().n,1);
   }finally{x.db.close()}
 });
