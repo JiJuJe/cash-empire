@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {achievementReward,CRATES,freeCratePeriod,freeCrateStatus,rollCrate,publicCrates} from '../worker/rewards.mjs';
+import {achievementReward,achievementDiamondReward,CRATES,freeCratePeriod,freeCrateStatus,rollCrate,publicCrates} from '../worker/rewards.mjs';
 import {PRODUCT_BY_ID} from '../worker/store-catalog.mjs';
 
 test('three crate previews match server odds and checkout prices',()=>{
   const previews=publicCrates();
   assert.deepEqual(previews.map(c=>c.id),['wood','iron','royal']);
+  assert.deepEqual(previews.map(c=>c.diamondPrice),[100,300,1000]);
   for(const crate of CRATES){
     assert.equal(Object.values(crate.weights).reduce((a,b)=>a+b,0),100);
     assert.equal(crate.priceCents,PRODUCT_BY_ID.get('crate_'+crate.id).priceCents);
@@ -25,6 +26,8 @@ test('harder achievements pay more and unknown IDs have no reward',()=>{
   assert.ok(achievementReward('earn-100')>achievementReward('earn-1'));
   assert.ok(achievementReward('click-1000')>achievementReward('click-10'));
   assert.equal(achievementReward('made-up-1'),null);
+  assert.ok(achievementDiamondReward('earn-100')>achievementDiamondReward('earn-1'));
+  assert.equal(achievementDiamondReward('made-up-1'),0);
 });
 test('free crate periods reset at UTC day, Monday week, and month boundaries',()=>{
   const sunday=Date.parse('2026-09-27T23:59:59Z'),monday=Date.parse('2026-09-28T00:00:00Z');

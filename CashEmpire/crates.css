@@ -1,5 +1,9 @@
 html.v2 .v2-discord-link{display:block;margin:12px 5px 0;padding:10px 12px;border:1px solid #7394b8;border-radius:9px;background:#253f62;color:#e9f1ff;font-size:12px;font-weight:800;text-decoration:none;text-align:center}
 html.v2 .v2-discord-link:hover{background:#345781;transform:translateY(-1px)}
+html.v2 .v2-diamond-wallet,html.v2 .v2-crate-wallet{display:flex;align-items:center;justify-content:center;gap:8px;width:max-content;max-width:100%;margin:9px auto 0;padding:6px 11px;border:1px solid #70b8d2;border-radius:20px;background:#123c4b;color:#dff8ff;font-size:11px;font-weight:850;letter-spacing:.04em}
+html.v2 .v2-crate-wallet{margin:8px 0 0;font-size:13px}
+html.v2 .v2-diamond-wallet strong,html.v2 .v2-crate-wallet strong{color:#fff;font-size:15px}
+html.v2 .v2-diamond-gem{display:inline-block;width:16px;height:18px;flex:none;clip-path:polygon(25% 0,75% 0,100% 32%,50% 100%,0 32%);background:linear-gradient(135deg,#f3ffff 3%,#8ce9ff 28%,#38ace2 58%,#1653a4);filter:drop-shadow(0 0 4px #6adeff)}
 html.v2 .achievement{display:flex;flex-direction:column;gap:5px;min-height:132px}
 html.v2 .achievement .achievement-icon{display:none}
 html.v2 .achievement.claimable{border-color:#d5b15e;box-shadow:inset 0 0 0 1px #d5b15e66,0 0 15px #d5b15e22}
@@ -47,6 +51,14 @@ html.v2 .v2-reveal-content{position:relative;display:grid;justify-items:center;g
 html.v2 .v2-reveal-chest{position:relative;width:190px;height:130px;margin:30px 0 8px;border:7px solid #51361d;border-radius:14px;background:repeating-linear-gradient(90deg,#a96d3c 0 36px,#84522e 36px 43px);box-shadow:0 15px 30px #0008;animation:v2CrateShake 1.8s ease-in-out forwards}
 html.v2 .v2-reveal-lid{position:absolute;left:-13px;top:-26px;width:202px;height:32px;border:7px solid #51361d;border-radius:10px;background:#c7894c;transform-origin:15% 90%}
 html.v2 .v2-reveal-lock{position:absolute;left:73px;top:37px;width:32px;height:39px;border:5px solid #6a471b;border-radius:6px;background:#f0c46d}
+html.v2 .v2-crate-reveal[data-crate-tier="iron"] .v2-reveal-content{border-color:#a5c5d6;background:radial-gradient(circle at 50% 42%,#3e667a,#102c3e 75%)}
+html.v2 .v2-crate-reveal[data-crate-tier="iron"] .v2-reveal-chest{border-color:#304354;background:repeating-linear-gradient(90deg,#9ab3be 0 36px,#657f8b 36px 43px)}
+html.v2 .v2-crate-reveal[data-crate-tier="iron"] .v2-reveal-lid{border-color:#304354;background:#b0c9d0}
+html.v2 .v2-crate-reveal[data-crate-tier="iron"] .v2-reveal-lock{border-color:#435968;background:#d9e7e6}
+html.v2 .v2-crate-reveal[data-crate-tier="royal"] .v2-reveal-content{border-color:#e7c375;background:radial-gradient(circle at 50% 42%,#70504a,#231b36 75%)}
+html.v2 .v2-crate-reveal[data-crate-tier="royal"] .v2-reveal-chest{border-color:#664619;background:repeating-linear-gradient(90deg,#e1b96b 0 36px,#a87a37 36px 43px);box-shadow:0 15px 30px #0008,0 0 28px #eabf7d88}
+html.v2 .v2-crate-reveal[data-crate-tier="royal"] .v2-reveal-lid{border-color:#664619;background:#f2d289}
+html.v2 .v2-crate-reveal[data-crate-tier="royal"] .v2-reveal-lock{border-color:#814f25;background:#ffdf84}
 html.v2 .v2-crate-reveal.revealed .v2-reveal-chest{animation:v2CrateBurst .6s forwards}
 html.v2 .v2-crate-reveal.revealed .v2-reveal-lid{transform:rotate(-45deg) translateY(-50px);transition:transform .5s}
 html.v2 .v2-reveal-kicker{margin:0;color:#e9c980;font-size:11px;font-weight:900;letter-spacing:.17em}

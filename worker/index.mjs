@@ -2,7 +2,7 @@ import {readSession,handleAuthRequest} from "./auth.mjs";
 import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationMessage} from "./admin.mjs";
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID,COSMETIC_SLOTS,publicCatalog} from "./store-catalog.mjs";
-import {achievementReward,CRATE_BY_ID,freeCratePeriod,freeCrateStatus,publicCrates,rollCrate} from "./rewards.mjs";
+import {achievementReward,achievementDiamondReward,CRATE_BY_ID,freeCratePeriod,freeCrateStatus,publicCrates,rollCrate} from "./rewards.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -46,7 +46,7 @@ function loadProgress(row){
   const upgrades=decodeJson(row.upgrades_json,[]);
   const prestige=decodeJson(row.prestige_json,[]);
   return {
-    userId:row.user_id,balance:capped(row.balance),lifetime:capped(row.lifetime_cash),
+    userId:row.user_id,balance:capped(row.balance),diamonds:Math.max(0,Math.floor(Number(row.diamonds)||0)),lifetime:capped(row.lifetime_cash),
     runEarned:capped(row.run_earned),rebirths:row.rebirths,empirePoints:row.empire_points,
     empireSpent:row.empire_spent,totalClicks:row.total_clicks,
     totalPlaytimeMs:Math.max(0,Number(row.playtime_ms)||0),lastHeartbeatMs:Math.max(0,Number(row.last_heartbeat_ms)||0),
@@ -66,6 +66,7 @@ function loadProgress(row){
   };
 }
 function normalizeExtras(s){
+  s.diamonds=Math.max(0,Math.min(1000000000,Math.floor(Number(s.diamonds)||0)));
   s.totalPlaytimeMs=Math.max(0,Number(s.totalPlaytimeMs)||0);
   s.lastHeartbeatMs=Math.max(0,Number(s.lastHeartbeatMs)||0);
   s.nextDropPlaytimeMs=Math.max(DROP_INTERVAL_MS,Number(s.nextDropPlaytimeMs)||DROP_INTERVAL_MS);
@@ -265,13 +266,14 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     s.boosterInventory[booster.id]=Math.min(1000000,(Number(s.boosterInventory[booster.id])||0)+1);
     s.pendingDropUntilMs=0;s.event={type:"boosterDrop",boosterId:booster.id,rarity:booster.rarity};
   }else if(action.type==="claim_achievement"){
-    const id=action.achievementId,reward=achievementReward(id);
+    const id=action.achievementId,reward=achievementReward(id),diamonds=achievementDiamondReward(id);
     if(!reward||!s.achievements.includes(id)||s.achievementClaims.includes(id))throw Error("Achievement reward unavailable.");
-    s.achievementClaims.push(id);award(s,reward);s.event={type:"achievementReward",id,amount:reward};
+    s.achievementClaims.push(id);award(s,reward);s.diamonds=Math.min(1000000000,s.diamonds+diamonds);
+    s.event={type:"achievementReward",id,amount:reward,diamonds};
   }else if(action.type==="buy_crate"){
     const crate=CRATE_BY_ID.get(action.crateId);
-    if(!crate||crate.cashPrice>s.balance)throw Error("Crate unavailable.");
-    s.balance=capped(s.balance-crate.cashPrice);
+    if(!crate||crate.diamondPrice>s.diamonds)throw Error("Not enough diamonds for this crate.");
+    s.diamonds-=crate.diamondPrice;
     s.crateInventory[crate.id]=(Number(s.crateInventory[crate.id])||0)+1;
     s.event={type:"crateBought",crateId:crate.id};
   }else if(action.type==="claim_free_crate"){
@@ -429,7 +431,7 @@ async function getLeaderboard(request,env,user){
 }
 function progressSummary(s,entitled){
   updateAchievements(s);
-  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,rebirthEra:s.rebirthEra??0,
+  return {balance:s.balance,diamonds:s.diamonds,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,rebirthEra:s.rebirthEra??0,
     ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?s.rushMultiplier:1),empirePoints:s.empirePoints,businessesPurchased:s.businessesPurchased,
     empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
     prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
@@ -443,14 +445,14 @@ function progressSummary(s,entitled){
 function updateStatement(env,s,oldVersion,entitled){
   updateAchievements(s);
   const rate=businessRate(s,entitled),cap=s.prestige.includes("nightshift")?57600:36000;
-  return env.DB.prepare(`UPDATE progress SET balance=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
+  return env.DB.prepare(`UPDATE progress SET balance=?,diamonds=?,lifetime_cash=?,run_earned=?,rebirths=?,empire_points=?,empire_spent=?,
     total_clicks=?,last_accrual_ms=?,last_golden_ms=?,rate_per_second=?,offline_cap_seconds=?,
     businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
     pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,
     pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,free_crate_claims_json=?,reward_cosmetics_json=?,highest_rate=?,businesses_purchased=?,
     version=version+1 WHERE user_id=? AND version=?`).bind(
-      s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
+      s.balance,s.diamonds,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
@@ -465,7 +467,7 @@ async function premiumSlots(env,userId){
   return (rows.results||[]).map(row=>Number(row.slot_number)).filter(slot=>slot===5||slot===6);
 }
 function initialProgress(userId,now){
-  return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
+  return normalizeExtras({userId,balance:0,diamonds:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
     pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},rewardCosmetics:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
     upgrades:[],prestige:[],clickStreams:{},epoch:0,rebirthEra:1,version:0});

@@ -18,20 +18,28 @@ export function achievementReward(id){
   const base={earn:25,click:20,business:100,rate:75,gold:500,rebirth:2500,upgrade:150,collector:60,empire:1000}[match[1]];
   return Math.min(1e25,Math.round(base*Math.pow(8,index)));
 }
+export function achievementDiamondReward(id){
+  const match=/^([a-z]+)-([\d.e+]+)$/.exec(id);
+  if(!match)return 0;
+  const index=ACHIEVEMENT_TARGETS[match[1]]?.indexOf(Number(match[2]))??-1;
+  if(index<0)return 0;
+  const base={earn:10,click:10,business:15,rate:15,gold:20,rebirth:50,upgrade:10,collector:10,empire:40}[match[1]];
+  return Math.min(5000,Math.round(base*Math.pow(2,index)));
+}
 
 const cosmeticIds=[
   'emerald_pile','emerald_click','diamond_pile','diamond_click',
   'pink_diamond_pile','obsidian_pile','neon_click','black_gold_cards',
   'vault_background','cosmic_pile','luxury_cards'
 ].filter(id=>COSMETIC_BY_ID.has(id));
-const tier=(id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,cosmetics,nextCrate)=>({
-  id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,
+const tier=(id,name,diamondPrice,priceCents,weights,cashRange,boosterRarities,cosmetics,nextCrate)=>({
+  id,name,diamondPrice,priceCents,weights,cashRange,boosterRarities,
   cosmetics:cosmetics.filter(item=>cosmeticIds.includes(item)),nextCrate
 });
 export const CRATES=[
-  tier('wood','Wood Crate',25000,50,{cash:55,booster:30,cosmetic:12,crate:3},[5000,40000],['common','rare'],['emerald_pile','emerald_click','neon_click'],'iron'),
-  tier('iron','Iron Crate',2500000,100,{cash:35,booster:40,cosmetic:20,crate:5},[200000,4000000],['rare','epic','legendary'],['diamond_pile','diamond_click','black_gold_cards','vault_background'],'royal'),
-  tier('royal','Royal Crate',100000000,300,{cash:20,booster:40,cosmetic:32,crate:8},[10000000,180000000],['epic','legendary','mythic'],['pink_diamond_pile','obsidian_pile','cosmic_pile','luxury_cards'],'royal')
+  tier('wood','Wood Crate',100,50,{cash:55,booster:30,cosmetic:12,crate:3},[5000,40000],['common','rare'],['emerald_pile','emerald_click','neon_click'],'iron'),
+  tier('iron','Iron Crate',300,100,{cash:35,booster:40,cosmetic:20,crate:5},[200000,4000000],['rare','epic','legendary'],['diamond_pile','diamond_click','black_gold_cards','vault_background'],'royal'),
+  tier('royal','Royal Crate',1000,300,{cash:20,booster:40,cosmetic:32,crate:8},[10000000,180000000],['epic','legendary','mythic'],['pink_diamond_pile','obsidian_pile','cosmic_pile','luxury_cards'],'royal')
 ];
 export const CRATE_BY_ID=new Map(CRATES.map(crate=>[crate.id,crate]));
 export function freeCratePeriod(crateId,now){
@@ -52,7 +60,7 @@ export function freeCrateStatus(claims,now){
     return [crate.id,{claimed:claims?.[crate.id]===period.key,nextAt:period.nextAt,period:crate.id==='wood'?'daily':crate.id==='iron'?'weekly':'monthly'}];
   }));
 }
-export function publicCrates(){return CRATES.map(({id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,cosmetics,nextCrate})=>({id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,cosmetics:cosmetics.map(id=>({id,name:COSMETIC_BY_ID.get(id)?.name||id})),nextCrate}));}
+export function publicCrates(){return CRATES.map(({id,name,diamondPrice,priceCents,weights,cashRange,boosterRarities,cosmetics,nextCrate})=>({id,name,diamondPrice,priceCents,weights,cashRange,boosterRarities,cosmetics:cosmetics.map(id=>({id,name:COSMETIC_BY_ID.get(id)?.name||id})),nextCrate}));}
 export function rollCrate(crate,random=Math.random){
   let pick=Math.max(0,Math.min(.999999999,random()))*100;
   let kind='cash';

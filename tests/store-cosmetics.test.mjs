@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const result=stmts.map(s=>({meta:{changes:db.prepare(s.sql).run(...s.args).changes}}));db.exec('COMMIT');return result}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','Buyer',1,'buyer',1)").run();
   const token='S'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -54,17 +54,18 @@ test('achievement reward is claimed once and scales with difficulty',async()=>{
     const state=await (await x.get('/api/progress/snapshot')).json();
     assert.deepEqual(state.achievementClaims,['earn-1','earn-100']);
     assert.equal(state.balance,1000+25+200);
+    assert.equal(state.diamonds,30);
     assert.equal((await x.post('/api/progress/action',{actionId:'achievement-forged-0001',type:'claim_achievement',achievementId:'earn-1000000000',generation:0})).status,400);
   }finally{x.close()}
 });
-test('cash crate purchase and open use server inventory with replay protection',async()=>{
+test('diamond crate purchase and open use server inventory with replay protection',async()=>{
   const x=await setup();try{
-    x.db.prepare("UPDATE progress SET balance=1000000 WHERE user_id='u'").run();
+    x.db.prepare("UPDATE progress SET balance=1000000,diamonds=1000 WHERE user_id='u'").run();
     const buy={actionId:'crate-buy-wood-0001',type:'buy_crate',crateId:'wood',generation:0};
     assert.equal((await x.post('/api/progress/action',buy)).status,200);
     assert.equal((await x.post('/api/progress/action',buy)).status,200);
     let state=await (await x.get('/api/progress/snapshot')).json();
-    assert.equal(state.balance,975000);assert.equal(state.crateInventory.wood,1);
+    assert.equal(state.balance,1000000);assert.equal(state.diamonds,900);assert.equal(state.crateInventory.wood,1);
     const open={actionId:'crate-open-wood-0001',type:'open_crate',crateId:'wood',generation:0};
     assert.equal((await x.post('/api/progress/action',open)).status,200);
     assert.equal((await x.post('/api/progress/action',open)).status,200);
@@ -73,6 +74,33 @@ test('cash crate purchase and open use server inventory with replay protection',
     assert.equal((await x.post('/api/progress/action',{...open,actionId:'crate-open-empty-0001'})).status,400);
     assert.equal((await x.post('/api/progress/action',{...buy,actionId:'crate-buy-forged-0001',crateId:'unknown'})).status,400);
   }finally{x.close()}
+});
+test('all crate tiers charge diamonds and reject a client-supplied diamond balance',async()=>{
+  const x=await setup();try{
+    x.db.prepare("UPDATE progress SET diamonds=1400,balance=7654321 WHERE user_id='u'").run();
+    for(const [crateId,expected] of [['wood',1300],['iron',1000],['royal',0]]){
+      assert.equal((await x.post('/api/progress/action',{actionId:'diamond-buy-'+crateId+'-0001',type:'buy_crate',crateId,generation:0})).status,200);
+      const snapshot=await (await x.get('/api/progress/snapshot')).json();
+      assert.equal(snapshot.diamonds,expected);
+      assert.equal(snapshot.balance,7654321);
+      assert.equal(snapshot.crateInventory[crateId],1);
+    }
+    assert.equal((await x.post('/api/progress/action',{actionId:'diamond-forgery-0001',type:'buy_crate',crateId:'wood',diamonds:1000,generation:0})).status,400);
+    assert.equal((await x.post('/api/progress/action',{actionId:'diamond-empty-0001',type:'buy_crate',crateId:'wood',generation:0})).status,400);
+  }finally{x.close()}
+});
+test('diamond migration credits existing claims once and preserves money and crates',()=>{
+  const db=new DatabaseSync(':memory:');try{
+    for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+    db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('old','Old',1,'old',1)").run();
+    db.prepare("INSERT INTO progress(user_id,last_accrual_ms,balance,achievement_claims_json,crate_inventory_json) VALUES('old',1,12345,?,?)")
+      .run('["earn-1","earn-100","earn-1"]','{"iron":2}');
+    db.exec(readFileSync(new URL('../migrations/0011_diamonds.sql',import.meta.url),'utf8'));
+    const row=db.prepare("SELECT diamonds,balance,crate_inventory_json,achievement_claims_json FROM progress WHERE user_id='old'").get();
+    assert.equal(row.diamonds,30);assert.equal(row.balance,12345);
+    assert.deepEqual(JSON.parse(row.crate_inventory_json),{iron:2});
+    assert.deepEqual(JSON.parse(row.achievement_claims_json),['earn-1','earn-100','earn-1']);
+  }finally{db.close()}
 });
 test('free daily, weekly and monthly crates can each be claimed once per account period',async()=>{
   const x=await setup();try{

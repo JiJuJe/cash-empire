@@ -54,7 +54,7 @@ function expiry(body,now){
 }
 function safeNumber(n,max){return typeof n==="number"&&Number.isFinite(n)&&n>0&&n<=max;}
 function progressReset(env,userId,version,now){
-  return env.DB.prepare(`UPDATE progress SET balance=0,lifetime_cash=0,run_earned=0,rebirths=0,empire_points=0,
+  return env.DB.prepare(`UPDATE progress SET balance=0,diamonds=0,lifetime_cash=0,run_earned=0,rebirths=0,empire_points=0,
     empire_spent=0,total_clicks=0,last_click_ms=0,last_golden_ms=0,last_accrual_ms=?,rate_per_second=0,
     offline_cap_seconds=36000,businesses_json='{}',upgrades_json='[]',prestige_json='[]',
     playtime_ms=0,last_heartbeat_ms=0,booster_inventory_json='{}',booster_equipped_json='[]',
@@ -171,8 +171,9 @@ export async function handleAdminRequest(request,env,user,api){
       const row=await env.DB.prepare("SELECT version FROM progress WHERE user_id=?").bind(target.id).first();
       if(!snapshot||!row)return error(404,"No recovery snapshot.");
       const old=JSON.parse(snapshot.progress_json);
-      const statement=env.DB.prepare("UPDATE progress SET "+RESTORE_FIELDS.map(k=>k+"=?").join(",")+",progress_epoch=progress_epoch+1,version=version+1 WHERE user_id=? AND version=?")
-        .bind(...RESTORE_FIELDS.map(k=>k==="last_accrual_ms"?now:k==="last_heartbeat_ms"?0:old[k]),target.id,row.version);
+      const restoreFields=old.diamonds===undefined?RESTORE_FIELDS:[...RESTORE_FIELDS,"diamonds"];
+      const statement=env.DB.prepare("UPDATE progress SET "+restoreFields.map(k=>k+"=?").join(",")+",progress_epoch=progress_epoch+1,version=version+1 WHERE user_id=? AND version=?")
+        .bind(...restoreFields.map(k=>k==="last_accrual_ms"?now:k==="last_heartbeat_ms"?0:old[k]),target.id,row.version);
       const result=await env.DB.batch([statement,audit({snapshotId:snapshot.id},"changes()=1")]);
       if(result[0].meta?.changes!==1)return error(409,"Progress changed. Retry with a new action ID.");
     }else if(body.type==="ADD_TEMP_BOOST"||body.type==="ADD_PERMANENT_BOOST"){
