@@ -2,7 +2,7 @@ import {readSession,handleAuthRequest} from "./auth.mjs";
 import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationMessage} from "./admin.mjs";
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID,COSMETIC_SLOTS,publicCatalog} from "./store-catalog.mjs";
-import {achievementReward,CRATE_BY_ID,publicCrates,rollCrate} from "./rewards.mjs";
+import {achievementReward,CRATE_BY_ID,freeCratePeriod,freeCrateStatus,publicCrates,rollCrate} from "./rewards.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -57,7 +57,7 @@ function loadProgress(row){
     rushMultiplier:Math.max(7,Number(row.rush_multiplier)||7),pendingBillTier:row.pending_bill_tier||null,
     pendingBillUntilMs:Math.max(0,Number(row.pending_bill_until_ms)||0),billClaims:decodeJson(row.bill_claims_json||"{}",{}),
     achievements:decodeJson(row.achievements_json||"[]",[]),achievementClaims:decodeJson(row.achievement_claims_json||"[]",[]),
-    crateInventory:decodeJson(row.crate_inventory_json||"{}",{}),rewardCosmetics:decodeJson(row.reward_cosmetics_json||"[]",[]),
+    crateInventory:decodeJson(row.crate_inventory_json||"{}",{}),freeCrateClaims:decodeJson(row.free_crate_claims_json||"{}",{}),rewardCosmetics:decodeJson(row.reward_cosmetics_json||"[]",[]),
     highestRate:Math.max(0,Number(row.highest_rate)||0),
     businessesPurchased:Math.max(Number(row.businesses_purchased)||0,Object.values(businesses).reduce((a,b)=>a+Math.max(0,Math.floor(b||0)),0)),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
@@ -78,6 +78,7 @@ function normalizeExtras(s){
   s.achievements=Array.isArray(s.achievements)?s.achievements:[];
   s.achievementClaims=Array.isArray(s.achievementClaims)?s.achievementClaims:[];
   s.crateInventory=s.crateInventory&&typeof s.crateInventory==="object"&&!Array.isArray(s.crateInventory)?s.crateInventory:{};
+  s.freeCrateClaims=s.freeCrateClaims&&typeof s.freeCrateClaims==="object"&&!Array.isArray(s.freeCrateClaims)?s.freeCrateClaims:{};
   s.rewardCosmetics=Array.isArray(s.rewardCosmetics)?s.rewardCosmetics:[];
   s.highestRate=Math.max(0,Number(s.highestRate)||0);
   s.businessesPurchased=Math.max(0,Math.floor(Number(s.businessesPurchased)||0));
@@ -273,6 +274,13 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     s.balance=capped(s.balance-crate.cashPrice);
     s.crateInventory[crate.id]=(Number(s.crateInventory[crate.id])||0)+1;
     s.event={type:"crateBought",crateId:crate.id};
+  }else if(action.type==="claim_free_crate"){
+    const crate=CRATE_BY_ID.get(action.crateId);
+    const period=freeCratePeriod(action.crateId,now);
+    if(!crate||!period||s.freeCrateClaims[crate.id]===period.key)throw Error("Free crate already claimed for this period.");
+    s.freeCrateClaims[crate.id]=period.key;
+    s.crateInventory[crate.id]=(Number(s.crateInventory[crate.id])||0)+1;
+    s.event={type:"freeCrateClaimed",crateId:crate.id};
   }else if(action.type==="open_crate"){
     const crate=CRATE_BY_ID.get(action.crateId);
     if(!crate||!(s.crateInventory[crate.id]>0))throw Error("Crate not owned.");
@@ -429,7 +437,7 @@ function progressSummary(s,entitled){
     premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
     pendingBillTier:s.pendingBillUntilMs>Date.now()?s.pendingBillTier:null,pendingBillUntilMs:s.pendingBillUntilMs,
     billClaims:s.billClaims,achievements:s.achievements,achievementClaims:s.achievementClaims,
-    crateInventory:s.crateInventory,rewardCosmetics:s.rewardCosmetics,highestRate:s.highestRate,
+    crateInventory:s.crateInventory,freeCrateClaims:s.freeCrateClaims,freeCrateStatus:freeCrateStatus(s.freeCrateClaims,Date.now()),rewardCosmetics:s.rewardCosmetics,highestRate:s.highestRate,
     rushUntilMs:s.rushUntilMs,rushMultiplier:s.rushMultiplier,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
 }
 function updateStatement(env,s,oldVersion,entitled){
@@ -440,7 +448,7 @@ function updateStatement(env,s,oldVersion,entitled){
     businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
     pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,
-    pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,reward_cosmetics_json=?,highest_rate=?,businesses_purchased=?,
+    pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,free_crate_claims_json=?,reward_cosmetics_json=?,highest_rate=?,businesses_purchased=?,
     version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
@@ -448,7 +456,7 @@ function updateStatement(env,s,oldVersion,entitled){
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
       s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
       (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),
-      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.rewardCosmetics),s.highestRate,s.businessesPurchased,
+      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.freeCrateClaims),JSON.stringify(s.rewardCosmetics),s.highestRate,s.businessesPurchased,
       s.userId,oldVersion
     );
 }
@@ -459,7 +467,7 @@ async function premiumSlots(env,userId){
 function initialProgress(userId,now){
   return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
-    pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],achievementClaims:[],crateInventory:{},rewardCosmetics:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
+    pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},rewardCosmetics:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
     upgrades:[],prestige:[],clickStreams:{},epoch:0,rebirthEra:1,version:0});
 }
 async function getProgress(env,user){
@@ -525,7 +533,7 @@ async function postProgress(request,env,user){
     unlock_slot:["actionId","type","slot","clicks","generation"],equip_booster:["actionId","type","slot","boosterId","clicks","generation"],
     unequip_booster:["actionId","type","slot","clicks","generation"],claim_booster_drop:["actionId","type","clicks","generation"],
     claim_achievement:["actionId","type","achievementId","clicks","generation"],buy_crate:["actionId","type","crateId","clicks","generation"],
-    open_crate:["actionId","type","crateId","clicks","generation"]};
+    open_crate:["actionId","type","crateId","clicks","generation"],claim_free_crate:["actionId","type","crateId","clicks","generation"]};
   if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key))||
     (checkpointOnly&&!action.clicks))fail(400,"Invalid action.");
   const bucket=checkpointOnly||action.type==="click_batch"?"progress-click:"+user.id:

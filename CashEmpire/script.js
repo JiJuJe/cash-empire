@@ -100,7 +100,7 @@
     version:1,money:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
-    upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],
+    upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},freeCrateStatus:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
@@ -122,6 +122,7 @@
   const LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
   let buyAmount = "1",activeTab = "home",sessionActiveSeconds=0,lastTick = Date.now(),lastHeartbeatSent=0,heartbeatBusy=false;
+  let openCratePreviewId=null;
   let goldenExpires = 0,goldenNext = Date.now() + 250000,billTier="golden",buff = null;
   let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
   let musicMuted = false, musicVolume = 30, musicStarted = false;
@@ -801,7 +802,9 @@
     }
   }
   function renderCrates(){
-    const list=$("crateList");list.replaceChildren();
+    const list=$("crateList");
+    const focusedPreview=document.activeElement?.closest?.(".v2-crate-preview")?.dataset.crateId;
+    list.replaceChildren();
     for(const crate of CRATES){
       const card=featureElement("article","v2-crate-card "+crate.id);
       const visual=featureElement("div","v2-crate-art");visual.setAttribute("aria-hidden","true");
@@ -811,7 +814,14 @@
       const odds=featureElement("div","v2-crate-odds");
       for(const [kind,weight] of Object.entries(crate.weights))odds.append(featureElement("span","",kind.toUpperCase()+" "+weight+"%"));
       info.append(odds);
-      const preview=featureElement("details","v2-crate-preview");
+      const preview=featureElement("details","v2-crate-preview");preview.dataset.crateId=crate.id;
+      preview.open=openCratePreviewId===crate.id;
+      preview.addEventListener("toggle",()=>{
+        if(preview.open){
+          openCratePreviewId=crate.id;
+          for(const other of list.querySelectorAll(".v2-crate-preview"))if(other!==preview)other.open=false;
+        }else if(openCratePreviewId===crate.id)openCratePreviewId=null;
+      });
       preview.append(featureElement("summary","","Preview possible loot"));
       const lines=[
         "Cash: "+euro(crate.cashRange[0])+"–"+euro(crate.cashRange[1]),
@@ -823,6 +833,10 @@
       for(const line of lines)preview.append(featureElement("p","",line));
       info.append(preview);
       const actions=featureElement("div","v2-crate-actions");
+      const free=freeCrateOffer(crate);
+      const freeButton=makeButton(free.claimed?"Claimed · resets "+new Date(free.nextAt).toLocaleDateString("en-GB",{timeZone:"UTC"})+" UTC":"Claim free "+free.period+" crate",free.claimed,()=>claimFreeCrate(crate));
+      freeButton.className="v2-crate-free";
+      info.append(freeButton);
       actions.append(makeButton("Buy for "+euro(crate.cashPrice),state.money<crate.cashPrice,()=>buyCrate(crate)));
       const pay=makeButton(!account.authenticated?"Sign in · €"+(crate.priceCents/100).toFixed(2):!premiumStatus.paymentsAvailable?"€"+(crate.priceCents/100).toFixed(2)+" · unavailable":"Buy · €"+(crate.priceCents/100).toFixed(2),account.authenticated&&!premiumStatus.paymentsAvailable,()=>{
         if(!account.authenticated){window.location.assign("/api/auth/google/start");return;}
@@ -832,6 +846,33 @@
       actions.append(pay,makeButton("Open crate",!(state.crateInventory[crate.id]>0),()=>openCrate(crate)),note);
       info.append(actions);card.append(visual,info);list.append(card);
     }
+    if(focusedPreview&&focusedPreview===openCratePreviewId)list.querySelector('.v2-crate-preview[data-crate-id="'+focusedPreview+'"] summary')?.focus({preventScroll:true});
+  }
+  function freeCratePeriod(crate,now=Date.now()){
+    const date=new Date(now),midnight=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate());
+    if(crate.id==="wood")return {key:new Date(midnight).toISOString().slice(0,10),nextAt:midnight+86400000};
+    if(crate.id==="iron"){
+      const monday=midnight-((date.getUTCDay()+6)%7)*86400000;
+      return {key:new Date(monday).toISOString().slice(0,10),nextAt:monday+7*86400000};
+    }
+    return {key:new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),1)).toISOString().slice(0,7),nextAt:Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,1)};
+  }
+  function freeCrateOffer(crate){
+    const period=crate.id==="wood"?"daily":crate.id==="iron"?"weekly":"monthly";
+    if(cloudMode){
+      const status=state.freeCrateStatus?.[crate.id];
+      if(!status)return {period,claimed:true,nextAt:Date.now()};
+      return {period,claimed:status.claimed&&Date.now()<status.nextAt,nextAt:status.nextAt};
+    }
+    const current=freeCratePeriod(crate);
+    return {period,claimed:state.freeCrateClaims?.[crate.id]===current.key,nextAt:current.nextAt};
+  }
+  function claimFreeCrate(crate){
+    if(freeCrateOffer(crate).claimed)return;
+    if(cloudMode){queueCloudAction({type:"claim_free_crate",crateId:crate.id});return;}
+    state.freeCrateClaims[crate.id]=freeCratePeriod(crate).key;
+    state.crateInventory[crate.id]=(state.crateInventory[crate.id]||0)+1;
+    toast("Free "+crate.name+" claimed");afterAction();
   }
   function buyCrate(crate){
     if(state.money<crate.cashPrice)return;
@@ -1066,7 +1107,10 @@
         info.append(featureElement("strong","",product.name),featureElement("p","",product.description),featureElement("div","premium-price","€"+(product.priceCents/100).toFixed(2)));
         const note=featureElement("p","premium-note",owned?"Owned on this account":!premiumStatus.authenticated?"Sign in to buy":!premiumStatus.paymentsAvailable?"Payments unavailable":"Secure Stripe Checkout");
         const buy=makeButton(owned?"Owned ✓":!premiumStatus.authenticated?"Sign in":!premiumStatus.paymentsAvailable?"Unavailable":"Buy",owned||premiumStatus.authenticated&&!premiumStatus.paymentsAvailable,()=>account.needsUsername?showUsernamePrompt():beginPremiumCheckout(product.id,buy,note));
-        buy.className="premium-buy";card.append(icon,info,buy,note);grid.append(card);
+        buy.className="premium-buy";
+        const controls=featureElement("div","v2-premium-actions");
+        if(Object.keys(product.cosmetics||{}).length)controls.append(makeButton("Preview",false,()=>showCosmeticPreview(product.name,product.cosmetics)));
+        controls.append(buy);card.append(icon,info,controls,note);grid.append(card);
       }
       body.append(grid);
     }
@@ -1090,12 +1134,20 @@
     try{cosmetics=await apiJson("/api/cosmetics/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot,cosmeticId:id})});applyCosmeticLook();renderCosmetics();toast(id?"Cosmetic equipped":"Default look equipped");}
     catch(error){toast(error.message||"Cosmetic could not be equipped.");}
   }
-  let cosmeticPreviewTimer=0;
-  function previewCosmetic(slot,id){
-    clearTimeout(cosmeticPreviewTimer);
-    const key="cosmetic"+slot[0].toUpperCase()+slot.slice(1);
-    document.documentElement.dataset[key]=id||"";
-    cosmeticPreviewTimer=setTimeout(applyCosmeticLook,4000);
+  function showCosmeticPreview(name,looks){
+    const body=featureElement("div","v2-cosmetic-preview");
+    body.append(featureElement("p","v2-preview-note","Preview only · nothing is equipped or saved."));
+    const scene=featureElement("div","v2-cosmetic-demo");
+    for(const slot of ["pile","click","background","cards","profile","tap"])scene.dataset["preview"+slot[0].toUpperCase()+slot.slice(1)]=looks[slot]||"";
+    const header=featureElement("div","v2-demo-profile","PLAYER · Preview");
+    const pile=featureElement("div","money-pile v2-demo-pile "+(pileEl.className.match(/wealth-\d+/)?.[0]||"wealth-0"));
+    if(pileEl.firstElementChild)pile.append(pileEl.firstElementChild.cloneNode(true));
+    const sample=featureElement("div","v2-demo-feedback");
+    sample.append(featureElement("strong","v2-demo-click","+$100"),featureElement("span","v2-demo-tap","✦"));
+    const card=featureElement("div","v2-demo-card");card.append(featureElement("strong","","Your business"),featureElement("span","","+$250 / second"));
+    scene.append(header,pile,sample,card);body.append(scene);
+    body.append(featureElement("p","v2-preview-note","The preview shows the look only. Buying or equipping requires the normal ownership check."));
+    modal(name+" preview",body,[{label:"Close",action:()=>{}}]);
   }
   function renderCosmetics(){
     const box=$("cosmeticsList");box.replaceChildren();
@@ -1108,7 +1160,7 @@
         const row=featureElement("div","cosmetic-option"+(option.owned?"":" locked"));
         row.append(featureElement("span","",option.name));
         const equipped=(cosmetics.loadout[slot]||null)===option.id;
-        row.append(makeButton("Preview",false,()=>previewCosmetic(slot,option.id)));
+        row.append(makeButton("Preview",false,()=>showCosmeticPreview(option.name,{[slot]:option.id})));
         row.append(makeButton(equipped?"Equipped":option.owned?"Equip":"Locked",equipped||!option.owned,()=>equipCosmetic(slot,option.id)));
         group.append(row);
       }
@@ -1226,6 +1278,8 @@
     if(Array.isArray(data.achievements))state.achievements=data.achievements;
     state.achievementClaims=Array.isArray(data.achievementClaims)?data.achievementClaims:[];
     state.crateInventory=data.crateInventory&&typeof data.crateInventory==="object"?data.crateInventory:{};
+    state.freeCrateClaims=data.freeCrateClaims&&typeof data.freeCrateClaims==="object"?data.freeCrateClaims:{};
+    state.freeCrateStatus=data.freeCrateStatus&&typeof data.freeCrateStatus==="object"?data.freeCrateStatus:{};
     state.rewardCosmetics=Array.isArray(data.rewardCosmetics)?data.rewardCosmetics:[];
     for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
     state.upgrades=Array.isArray(data.upgrades)?data.upgrades:[];
@@ -1246,6 +1300,7 @@
       if(found)toast("Booster found: "+found.name+" ("+found.rarity+")!");
     }
     if(data.event?.type==="achievementReward")toast("Achievement reward +"+euro(data.event.amount));
+    if(data.event?.type==="freeCrateClaimed")toast("Free "+(CRATES.find(c=>c.id===data.event.crateId)?.name||"crate")+" claimed");
     if(data.event?.type==="crateOpened"){
       showCrateReveal(data.event.reward);
       if(data.event.reward?.kind==="cosmetic")refreshCosmetics();
@@ -1433,6 +1488,7 @@
     s.achievements=Array.isArray(raw.achievements)?[...new Set(raw.achievements.filter(x=>validAchievements.has(x)))]:[];
     s.achievementClaims=Array.isArray(raw.achievementClaims)?[...new Set(raw.achievementClaims.filter(x=>validAchievements.has(x)&&s.achievements.includes(x)))]:[];
     for(const crate of CRATES)s.crateInventory[crate.id]=Math.min(1000000,Math.floor(safeNumber(raw.crateInventory?.[crate.id])));
+    for(const crate of CRATES)if(typeof raw.freeCrateClaims?.[crate.id]==="string"&&raw.freeCrateClaims[crate.id].length<=10)s.freeCrateClaims[crate.id]=raw.freeCrateClaims[crate.id];
     s.rewardCosmetics=Array.isArray(raw.rewardCosmetics)?[...new Set(raw.rewardCosmetics.filter(x=>typeof x==="string"&&x.length<80))]:[];
     s.cosmeticLoadout=raw.cosmeticLoadout&&typeof raw.cosmeticLoadout==="object"?raw.cosmeticLoadout:{};
     const validPrestige=new Set(PRESTIGE.map(p=>p.id));
@@ -1492,7 +1548,7 @@
       {label:"Cancel",action:()=>{}},
       {label:"Rebirth",action:()=>{
         if(cloudMode){queueCloudAction({type:"rebirth"});return;}
-        const keep={lifetime:state.lifetime,achievements:state.achievements,achievementClaims:state.achievementClaims,crateInventory:state.crateInventory,rewardCosmetics:state.rewardCosmetics,cosmeticLoadout:state.cosmeticLoadout,prestigeUpgrades:state.prestigeUpgrades,
+        const keep={lifetime:state.lifetime,achievements:state.achievements,achievementClaims:state.achievementClaims,crateInventory:state.crateInventory,freeCrateClaims:state.freeCrateClaims,rewardCosmetics:state.rewardCosmetics,cosmeticLoadout:state.cosmeticLoadout,prestigeUpgrades:state.prestigeUpgrades,
           empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
           totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
           highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings,

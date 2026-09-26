@@ -7,7 +7,7 @@ html.v2 .v2-achievement-reward{margin-top:auto;color:#e9cb82;font-size:11px;font
 html.v2 .achievement.locked .v2-achievement-reward{opacity:.55}
 html.v2 .achievement button{min-height:30px;margin-top:5px;padding:5px 8px;border:1px solid #d8b867;border-radius:6px;background:linear-gradient(#e8ca7d,#c59643);color:#193328;font-size:10px;font-weight:900}
 html.v2 .achievement button:disabled{border-color:#557266;background:#2b4c42;color:#b2ccba}
-html.v2 .v2-crate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:22px}
+html.v2 .v2-crate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start;gap:18px;margin-top:22px}
 html.v2 .v2-crate-card{min-width:0;overflow:hidden;border:1px solid #597f70;border-radius:17px;background:linear-gradient(160deg,#234844,#112e37);box-shadow:0 13px 25px #0004}
 html.v2 .v2-crate-card.iron{border-color:#829fae;background:linear-gradient(160deg,#31515c,#122c39)}
 html.v2 .v2-crate-card.royal{border-color:#c69c60;background:linear-gradient(160deg,#544630,#152d37)}
@@ -28,9 +28,12 @@ html.v2 .v2-crate-info h3{margin:0;font-size:25px}
 html.v2 .v2-crate-info p{margin:0;color:#bfd5c9;font-size:12px}
 html.v2 .v2-crate-odds{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}
 html.v2 .v2-crate-odds span{padding:7px;border:1px solid #5d8172;border-radius:6px;color:#ead08f;font-size:10px;font-weight:800;text-align:center}
-html.v2 .v2-crate-preview{padding:8px 10px;border:1px solid #547668;border-radius:8px;background:#0f2932}
-html.v2 .v2-crate-preview summary{cursor:pointer;color:#eff4d9;font-size:12px;font-weight:800}
-html.v2 .v2-crate-preview p{margin-top:8px;font-size:11px;line-height:1.45}
+html.v2 .v2-crate-preview{padding:0;border:1px solid #547668;border-radius:8px;background:#0f2932;transition:border-color .2s,box-shadow .2s}
+html.v2 .v2-crate-preview[open]{border-color:#d0b674;box-shadow:0 0 0 2px #dfc37a22}
+html.v2 .v2-crate-preview summary{cursor:pointer;padding:9px 11px;color:#eff4d9;font-size:12px;font-weight:800}
+html.v2 .v2-crate-preview p{margin:0;padding:7px 11px;border-top:1px solid #ffffff15;font-size:11px;line-height:1.45}
+html.v2 .v2-crate-free{min-height:38px;padding:7px 12px;border:1px solid #e6cb84;border-radius:8px;background:linear-gradient(110deg,#d2a954,#f1d995);color:#203629;font-size:12px;font-weight:900}
+html.v2 .v2-crate-free:disabled{background:#345348;border-color:#5e836d;color:#d4e5c7;opacity:.85}
 html.v2 .v2-crate-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}
 html.v2 .v2-crate-actions button{min-height:38px;padding:6px;border:1px solid #d8bc76;border-radius:7px;background:#dabb71;color:#203629;font-size:11px;font-weight:900}
 html.v2 .v2-crate-actions button:nth-child(2){background:#30505e;color:#f0f2e7}
@@ -51,6 +54,45 @@ html.v2 .v2-reveal-content h2{margin:0;color:#fff4d3;font-size:28px}
 html.v2 #crateRevealReward{min-height:32px;margin:0;color:#f4d47c;font-size:21px;font-weight:900}
 html.v2 #crateRevealClose{padding:10px 20px;border:1px solid #f2d286;border-radius:8px;background:#e4bf68;color:#203627;font-weight:900}
 html.v2 #crateRevealClose[hidden]{display:none}
+html.v2 .v2-premium-actions{display:grid;gap:5px}
+html.v2 .v2-premium-actions button{min-height:30px;padding:5px 8px;border:1px solid #a7bfae;border-radius:6px;background:#315649;color:#f4f1dd;font-size:11px;font-weight:800}
+html.v2 .v2-premium-actions .premium-buy{background:#dbb764;color:#183527}
+html.v2 .v2-premium-actions button:disabled{opacity:.6}
+html.v2 .v2-cosmetic-preview{display:grid;gap:12px}
+html.v2 .v2-preview-note{margin:0;color:#c7d7ca;font-size:12px;line-height:1.4}
+html.v2 .v2-cosmetic-demo{display:grid;justify-items:center;gap:8px;padding:18px;border:1px solid #779478;border-radius:16px;background:radial-gradient(circle at 50% 35%,#315a45,#132f37 75%)}
+html.v2 .v2-cosmetic-demo[data-preview-background="vault_background"],html.v2 .v2-cosmetic-demo[data-preview-background="luxury_background"]{background:radial-gradient(circle at 50% 35%,#64512b,#29291e 65%,#101813)}
+html.v2 .v2-cosmetic-demo[data-preview-background="cosmic_background"]{background:radial-gradient(circle at 48% 34%,#3b3c73,#171c3f 60%,#0e1425)}
+html.v2 .v2-demo-profile{padding:7px 12px;border:1px solid #b6caa7;border-radius:18px;color:#f7f0d7;font-size:11px;font-weight:800}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="emerald"] .v2-demo-profile{box-shadow:0 0 0 2px #40c585}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="diamond"] .v2-demo-profile{box-shadow:0 0 0 2px #8edaff}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="pink_diamond"] .v2-demo-profile{box-shadow:0 0 0 2px #f498d3}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="obsidian"] .v2-demo-profile{box-shadow:0 0 0 2px #a67ce1}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="luxury"] .v2-demo-profile,html.v2 .v2-cosmetic-demo[data-preview-profile="supporter_profile"] .v2-demo-profile{box-shadow:0 0 0 2px #e6be67}
+html.v2 .v2-cosmetic-demo[data-preview-profile^="cosmic"] .v2-demo-profile{box-shadow:0 0 0 2px #9d9dff}
+html.v2 .v2-demo-pile.money-pile{position:relative;width:155px;height:155px;max-height:none;max-width:none;aspect-ratio:1;pointer-events:none}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="emerald"] .v2-demo-pile .wealth-scene{filter:hue-rotate(42deg) saturate(1.4) drop-shadow(0 5px 2px #0b6b38)}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="diamond"] .v2-demo-pile .wealth-scene{filter:hue-rotate(150deg) saturate(1.2) drop-shadow(0 5px 2px #5ed7fa)}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="pink_diamond"] .v2-demo-pile .wealth-scene{filter:hue-rotate(240deg) saturate(1.5) drop-shadow(0 5px 2px #ff87d1)}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="obsidian"] .v2-demo-pile .wealth-scene{filter:hue-rotate(255deg) saturate(.75) brightness(.78) drop-shadow(0 5px 2px #a768f7)}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="luxury"] .v2-demo-pile .wealth-scene{filter:sepia(.5) saturate(1.5) contrast(1.15) drop-shadow(0 5px 2px #d1ad50)}
+html.v2 .v2-cosmetic-demo[data-preview-pile^="cosmic"] .v2-demo-pile .wealth-scene{filter:hue-rotate(190deg) saturate(1.4) contrast(1.1) drop-shadow(0 5px 2px #7c6bef)}
+html.v2 .v2-demo-feedback{display:flex;align-items:center;gap:25px;color:#ffedaa;font-weight:900}
+html.v2 .v2-cosmetic-demo[data-preview-click^="emerald"] .v2-demo-click,html.v2 .v2-cosmetic-demo[data-preview-click="neon_click"] .v2-demo-click{color:#79ffc4}
+html.v2 .v2-cosmetic-demo[data-preview-click^="diamond"] .v2-demo-click{color:#a5eaff}
+html.v2 .v2-cosmetic-demo[data-preview-click^="pink_diamond"] .v2-demo-click{color:#ffa9e1}
+html.v2 .v2-cosmetic-demo[data-preview-click^="obsidian"] .v2-demo-click,html.v2 .v2-cosmetic-demo[data-preview-click^="cosmic"] .v2-demo-click{color:#c8a5ff}
+html.v2 .v2-cosmetic-demo[data-preview-tap^="emerald"] .v2-demo-tap{color:#79ffc4}
+html.v2 .v2-cosmetic-demo[data-preview-tap^="diamond"] .v2-demo-tap{color:#a5eaff}
+html.v2 .v2-cosmetic-demo[data-preview-tap^="pink_diamond"] .v2-demo-tap{color:#ffa9e1}
+html.v2 .v2-cosmetic-demo[data-preview-tap^="obsidian"] .v2-demo-tap,html.v2 .v2-cosmetic-demo[data-preview-tap^="cosmic"] .v2-demo-tap{color:#c8a5ff}
+html.v2 .v2-demo-card{display:flex;justify-content:space-between;gap:12px;width:min(100%,280px);padding:9px;border:1px solid #7da17d;border-radius:8px;background:#204a39;color:#f2ecd2;font-size:11px}
+html.v2 .v2-cosmetic-demo[data-preview-cards^="emerald"] .v2-demo-card{border-color:#4dca8a}
+html.v2 .v2-cosmetic-demo[data-preview-cards^="diamond"] .v2-demo-card{border-color:#77d8fc}
+html.v2 .v2-cosmetic-demo[data-preview-cards^="pink_diamond"] .v2-demo-card{border-color:#f48aca}
+html.v2 .v2-cosmetic-demo[data-preview-cards^="obsidian"] .v2-demo-card{border-color:#a579d9}
+html.v2 .v2-cosmetic-demo[data-preview-cards="black_gold_cards"] .v2-demo-card,html.v2 .v2-cosmetic-demo[data-preview-cards="luxury_cards"] .v2-demo-card{background:#25251e;border-color:#e6be67}
+html.v2 .v2-cosmetic-demo[data-preview-cards="cosmic_cards"] .v2-demo-card{background:#202443;border-color:#7f8cee}
 @keyframes v2CrateShake{0%,15%,35%,55%,75%{transform:rotate(-4deg)}10%,25%,45%,65%,85%{transform:rotate(4deg)}100%{transform:scale(1.04)}}
 @keyframes v2CrateBurst{50%{transform:scale(1.18);filter:drop-shadow(0 0 34px #ffd682)}100%{transform:scale(1.04)}}
 html.v2.reduce-motion .v2-reveal-chest,html.v2.reduce-motion .v2-crate-reveal.revealed .v2-reveal-chest{animation:none}

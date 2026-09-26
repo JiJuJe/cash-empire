@@ -34,6 +34,24 @@ export const CRATES=[
   tier('royal','Royal Crate',100000000,300,{cash:20,booster:40,cosmetic:32,crate:8},[10000000,180000000],['epic','legendary','mythic'],['pink_diamond_pile','obsidian_pile','cosmic_pile','luxury_cards'],'royal')
 ];
 export const CRATE_BY_ID=new Map(CRATES.map(crate=>[crate.id,crate]));
+export function freeCratePeriod(crateId,now){
+  const date=new Date(now);
+  if(!Number.isFinite(date.getTime())||!CRATE_BY_ID.has(crateId))return null;
+  const midnight=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate());
+  if(crateId==='wood')return {key:new Date(midnight).toISOString().slice(0,10),nextAt:midnight+86400000};
+  if(crateId==='iron'){
+    const monday=midnight-((date.getUTCDay()+6)%7)*86400000;
+    return {key:new Date(monday).toISOString().slice(0,10),nextAt:monday+7*86400000};
+  }
+  const month=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),1);
+  return {key:new Date(month).toISOString().slice(0,7),nextAt:Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,1)};
+}
+export function freeCrateStatus(claims,now){
+  return Object.fromEntries(CRATES.map(crate=>{
+    const period=freeCratePeriod(crate.id,now);
+    return [crate.id,{claimed:claims?.[crate.id]===period.key,nextAt:period.nextAt,period:crate.id==='wood'?'daily':crate.id==='iron'?'weekly':'monthly'}];
+  }));
+}
 export function publicCrates(){return CRATES.map(({id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,cosmetics,nextCrate})=>({id,name,cashPrice,priceCents,weights,cashRange,boosterRarities,cosmetics:cosmetics.map(id=>({id,name:COSMETIC_BY_ID.get(id)?.name||id})),nextCrate}));}
 export function rollCrate(crate,random=Math.random){
   let pick=Math.max(0,Math.min(.999999999,random()))*100;

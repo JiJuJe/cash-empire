@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const result=stmts.map(s=>({meta:{changes:db.prepare(s.sql).run(...s.args).changes}}));db.exec('COMMIT');return result}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','Buyer',1,'buyer',1)").run();
   const token='S'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -72,6 +72,23 @@ test('cash crate purchase and open use server inventory with replay protection',
     assert.equal(state.crateInventory.wood,0);
     assert.equal((await x.post('/api/progress/action',{...open,actionId:'crate-open-empty-0001'})).status,400);
     assert.equal((await x.post('/api/progress/action',{...buy,actionId:'crate-buy-forged-0001',crateId:'unknown'})).status,400);
+  }finally{x.close()}
+});
+test('free daily, weekly and monthly crates can each be claimed once per account period',async()=>{
+  const x=await setup();try{
+    for(const crateId of ['wood','iron','royal']){
+      const action={actionId:'free-'+crateId+'-claim-0001',type:'claim_free_crate',crateId,generation:0};
+      assert.equal((await x.post('/api/progress/action',action)).status,200);
+      assert.equal((await x.post('/api/progress/action',action)).status,200);
+      assert.equal((await x.post('/api/progress/action',{...action,actionId:'free-'+crateId+'-claim-0002'})).status,400);
+    }
+    const snapshot=await (await x.get('/api/progress/snapshot')).json();
+    for(const crateId of ['wood','iron','royal']){
+      assert.equal(snapshot.crateInventory[crateId],1);
+      assert.equal(snapshot.freeCrateStatus[crateId].claimed,true);
+    }
+    assert.equal(snapshot.balance,1000);
+    assert.equal((await x.post('/api/progress/action',{actionId:'free-fake-crate-0001',type:'claim_free_crate',crateId:'fake',generation:0})).status,400);
   }finally{x.close()}
 });
 test('paid repeatable crate is granted once per verified checkout and may be bought again',async()=>{
