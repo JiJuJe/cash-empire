@@ -390,6 +390,17 @@
       }
       pileEl.append(scene);
     }
+    pileEl.append(makeCosmeticPileArt(cosmetics.loadout.pile||""));
+  }
+  function makeCosmeticPileArt(skin){
+    const art=featureElement("span","v2-cosmetic-pile");art.dataset.pileSkin=skin;
+    art.setAttribute("aria-hidden","true");
+    for(const [kind,label] of [["coin","$"],["gold",""],["bitcoin","₿"],["diamond",""]]){
+      const item=featureElement("span","v2-wealth-item "+kind);
+      item.append(featureElement("span","v2-wealth-shape",label),featureElement("small","",kind.toUpperCase()));
+      art.append(item);
+    }
+    return art;
   }
   function getWealthVisualTier(rate,lifetime=state.lifetime) {return window.ClickTheCashWealth.stage(rate,lifetime);}
   function updatePile() {
@@ -467,12 +478,13 @@
       for(const b of BUSINESS){
         const owned=state.businesses[b.id],quantity=selectedQuantity(b),want=displayedQuantity(b);
         const scene=featureElement("article","v2-business-scene "+b.id+(owned?" is-owned":" is-locked"));
-        const stage=featureElement("div","v2-scene-stage");stage.setAttribute("aria-hidden","true");
-        stage.append(featureElement("span","v2-scene-light"),featureElement("span","v2-scene-floor"));
+        const stage=featureElement("button","v2-scene-stage");stage.type="button";stage.setAttribute("aria-label",b.name+" business stats");stage.setAttribute("aria-describedby","businessTooltip");
         const art=document.createElement("img");art.src=b.image;art.alt="";art.loading="lazy";art.decoding="async";art.className="v2-scene-building";stage.append(art);
-        const worker=featureElement("span","v2-scene-worker");
-        worker.append(featureElement("i","v2-worker-head"),featureElement("i","v2-worker-body"),featureElement("i","v2-worker-arm"));stage.append(worker);
-        stage.append(featureElement("span","v2-scene-coin coin-one","$"),featureElement("span","v2-scene-coin coin-two","$"));
+        stage.addEventListener("mouseenter",()=>showBusinessTooltip(b,stage));
+        stage.addEventListener("mouseleave",hideBusinessTooltip);
+        stage.addEventListener("focus",()=>showBusinessTooltip(b,stage));
+        stage.addEventListener("blur",hideBusinessTooltip);
+        stage.addEventListener("click",()=>showBusinessTooltip(b,stage));
         const details=featureElement("div","v2-scene-details");
         details.append(featureElement("span","v2-scene-kicker",owned?"BUSINESS ACTIVE":"NEXT OPPORTUNITY"),featureElement("h3","",b.name));
         const stats=featureElement("div","v2-scene-stats");
@@ -620,7 +632,7 @@
       tooltipRow("Owned",owned.toLocaleString("en-US")),
       tooltipRow("One produces",euro(businessUnitRate(b),2)+"/sec"),
       tooltipRow("All produce",euro(businessTotalRate(b),2)+"/sec"),
-      tooltipRow("Lifetime produced",euro(state.businessRevenue[b.id])),
+      tooltipRow(cloudMode?"Earned since tracking began":"Total earned",euro(state.businessRevenue[b.id]||0)),
       tooltipRow("Share of income",total?format(businessTotalRate(b)/total*100,1)+"%":"0%")
     );
     tip.hidden=false;
@@ -1039,6 +1051,10 @@
     const row=featureElement("div","leaderboard-row"+(entry.isSelf?" is-me":"")+(isPersonal?" personal-rank":""));
     const rank=featureElement("span","rank","#"+entry.rank);
     const name=featureElement("span","username",entry.username);
+    if(typeof entry.profile==="string"&&/^(emerald|diamond|pink_diamond|obsidian|luxury|cosmic|supporter)_profile$/.test(entry.profile)){
+      const badge=featureElement("span","v2-leaderboard-badge",entry.profile.replace("_profile","").replaceAll("_"," "));
+      badge.dataset.profile=entry.profile;name.append(" ",badge);
+    }
     const cash=featureElement("span","cash",euro(entry.lifetimeCash));
     const rebirths=featureElement("span","rebirths",format(entry.rebirths)+" rebirths");
     row.append(rank,name,cash,rebirths);
@@ -1123,8 +1139,9 @@
     if(!premiumStatus.catalog.length)body.append(featureElement("p","premium-note","Store catalog is temporarily unavailable."));
   }
   function applyCosmeticLook(){
-    for(const slot of ["pile","click","background","cards","profile","tap"])
+    for(const slot of ["pile","click","background","cards","profile"])
       document.documentElement.dataset["cosmetic"+slot[0].toUpperCase()+slot.slice(1)]=cosmetics.loadout[slot]||"";
+    const pileArt=pileEl.querySelector(".v2-cosmetic-pile");if(pileArt)pileArt.dataset.pileSkin=cosmetics.loadout.pile||"";
   }
   async function refreshCosmetics(){
     if(!account.authenticated||!account.username)return;
@@ -1144,12 +1161,11 @@
     const body=featureElement("div","v2-cosmetic-preview");
     body.append(featureElement("p","v2-preview-note","Preview only · nothing is equipped or saved."));
     const scene=featureElement("div","v2-cosmetic-demo");
-    for(const slot of ["pile","click","background","cards","profile","tap"])scene.dataset["preview"+slot[0].toUpperCase()+slot.slice(1)]=looks[slot]||"";
-    const header=featureElement("div","v2-demo-profile","PLAYER · Preview");
-    const pile=featureElement("div","money-pile v2-demo-pile "+(pileEl.className.match(/wealth-\d+/)?.[0]||"wealth-0"));
-    if(pileEl.firstElementChild)pile.append(pileEl.firstElementChild.cloneNode(true));
+    for(const slot of ["pile","click","background","cards","profile"])scene.dataset["preview"+slot[0].toUpperCase()+slot.slice(1)]=looks[slot]||"";
+    const header=featureElement("div","v2-demo-profile",(account.username||"PLAYER")+" · Preview");
+    const pile=featureElement("div","v2-demo-pile");pile.append(makeCosmeticPileArt(looks.pile||"default"));
     const sample=featureElement("div","v2-demo-feedback");
-    sample.append(featureElement("strong","v2-demo-click","+$100"),featureElement("span","v2-demo-tap","✦"));
+    sample.append(featureElement("strong","v2-demo-click","+$100"));
     const card=featureElement("div","v2-demo-card");card.append(featureElement("strong","","Your business"),featureElement("span","","+$250 / second"));
     scene.append(header,pile,sample,card);body.append(scene);
     body.append(featureElement("p","v2-preview-note","The preview shows the look only. Buying or equipping requires the normal ownership check."));
@@ -1158,7 +1174,7 @@
   function renderCosmetics(){
     const box=$("cosmeticsList");box.replaceChildren();
     if(!account.authenticated){cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};box.append(featureElement("p","section-intro","Guest crate rewards stay in this browser. Sign in for account cosmetics across devices."));}
-    const names={pile:"Money pile skin",click:"Click effect",background:"Background theme",cards:"Business cards",profile:"Profile / username",tap:"Cursor / tap effect"};
+    const names={pile:"Money pile skin",click:"Click effect",background:"Background theme",cards:"Business cards",profile:"Profile / username"};
     for(const [slot,label] of Object.entries(names)){
       const group=featureElement("section","cosmetic-group");group.append(featureElement("h3","",label));
       const options=[{id:null,name:"Default",owned:true},...premiumStatus.catalog.flatMap(product=>Object.entries(product.cosmetics||{}).filter(([key])=>key===slot).map(([,id])=>({id,name:product.name,owned:cosmetics.owned.includes(id)})))];
@@ -1288,6 +1304,7 @@
     state.freeCrateClaims=data.freeCrateClaims&&typeof data.freeCrateClaims==="object"?data.freeCrateClaims:{};
     state.freeCrateStatus=data.freeCrateStatus&&typeof data.freeCrateStatus==="object"?data.freeCrateStatus:{};
     state.rewardCosmetics=Array.isArray(data.rewardCosmetics)?data.rewardCosmetics:[];
+    if(data.businessRevenue&&typeof data.businessRevenue==="object")for(const b of BUSINESS)state.businessRevenue[b.id]=safeNumber(data.businessRevenue[b.id]);
     for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
     state.upgrades=Array.isArray(data.upgrades)?data.upgrades:[];
     state.prestigeUpgrades=Array.isArray(data.prestigeUpgrades)?data.prestigeUpgrades:[];

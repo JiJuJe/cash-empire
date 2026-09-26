@@ -34,7 +34,7 @@ test("Google callback creates a stable account, username is unique, and sign out
   database.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
-  database.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0009_achievement_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0010_free_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0011_diamonds.sql",import.meta.url),"utf8"));
+  database.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0009_achievement_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0010_free_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0011_diamonds.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0012_business_revenue.sql",import.meta.url),"utf8"));
   const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
   const jwk={...await crypto.subtle.exportKey("jwk",keys.publicKey),kid:"test-key",use:"sig"};
   const env={DB:d1(database),SESSION_SECRET:"a-secret-long-enough-for-tests",GOOGLE_CLIENT_ID:"client-test",GOOGLE_CLIENT_SECRET:"secret-test",PUBLIC_SITE_URL:origin};
@@ -144,7 +144,7 @@ test("leaderboard is public, ordered, limited to 30, and returns an outside play
   db.exec(readFileSync(new URL("../migrations/0002_google_accounts.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
-  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0009_achievement_crates.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0010_free_crates.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0011_diamonds.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0009_achievement_crates.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0010_free_crates.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0011_diamonds.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0012_business_revenue.sql",import.meta.url),"utf8"));
   const now=Date.now();
   const user=db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES(?,?,?,?,1)");
   const score=db.prepare("INSERT INTO progress(user_id,last_accrual_ms,lifetime_cash,rebirths) VALUES(?,?,?,?)");
@@ -153,6 +153,8 @@ test("leaderboard is public, ordered, limited to 30, and returns an outside play
     user.run(id,"Player_"+i,now,("Player_"+i).toLowerCase());
     score.run(id,now,i===1||i===2?500:500-i,i===2?5:0);
   }
+  db.prepare("INSERT INTO cosmetic_loadout(user_id,slot,cosmetic_id,updated_at_ms) VALUES('player002','profile','diamond_profile',?)").run(now);
+  db.prepare("INSERT INTO cosmetic_loadout(user_id,slot,cosmetic_id,updated_at_ms) VALUES('player101','profile','supporter_profile',?)").run(now);
   const token="A".repeat(43);
   const hash=Buffer.from(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token))).toString("hex");
   db.prepare("INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)")
@@ -162,11 +164,13 @@ test("leaderboard is public, ordered, limited to 30, and returns an outside play
   const publicData=await publicResult.json();
   assert.equal(publicData.players.length,30);
   assert.equal(publicData.players[0].username,"Player_2");
+  assert.equal(publicData.players[0].profile,"diamond_profile");
   assert.equal(publicData.players[1].username,"Player_1");
   assert.equal(publicData.authenticated,false);
   const ownResult=await worker.fetch(new Request(origin+"/api/leaderboard",{headers:{Cookie:"__Host-ce_session="+token}}),env);
   const ownData=await ownResult.json();
   assert.equal(ownData.me.rank,101);
   assert.equal(ownData.me.isSelf,true);
+  assert.equal(ownData.me.profile,"supporter_profile");
   db.close();
 });

@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const r=stmts.map(x=>({meta:{changes:db.prepare(x.sql).run(...x.args).changes}}));db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const file of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql'])db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+  for(const file of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql'])db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','CloudPlayer',1,'cloudplayer',1)").run();
   const token='T'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -44,6 +44,19 @@ test('snapshot, account, leaderboard and store status do not write D1',async()=>
     for(const path of ['/api/progress/snapshot','/api/account','/api/leaderboard','/api/store/status'])assert.equal((await x.get(path)).status,200);
     assert.equal(x.db.prepare('SELECT version FROM progress WHERE user_id=\'u\'').get().version,before);
     assert.equal(x.db.prepare('SELECT COUNT(*) AS n FROM api_rate_limits').get().n,0);
+  }finally{x.db.close()}
+});
+test('business earnings are tracked by the server and survive a checkpoint',async()=>{
+  const x=await setup();try{
+    x.db.prepare("UPDATE progress SET businesses_json=?,last_accrual_ms=? WHERE user_id='u'").run(JSON.stringify({collector:2}),Date.now()-10000);
+    const response=await x.post({type:'click_checkpoint',clicks:[{streamId:'revenue-stream-0001',total:1}]});
+    assert.equal(response.status,200);
+    const snapshot=await response.json();
+    assert.ok(snapshot.businessRevenue.collector>=1.9);
+    assert.ok(snapshot.businessRevenue.collector<=2.5);
+    assert.ok(snapshot.balance>=2.9);
+    const stored=JSON.parse(x.db.prepare("SELECT business_revenue_json FROM progress WHERE user_id='u'").get().business_revenue_json);
+    assert.equal(stored.collector,snapshot.businessRevenue.collector);
   }finally{x.db.close()}
 });
 test('two devices share one D1 run and independently retry cumulative checkpoints',async()=>{

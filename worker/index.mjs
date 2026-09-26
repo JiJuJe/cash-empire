@@ -57,7 +57,7 @@ function loadProgress(row){
     rushMultiplier:Math.max(7,Number(row.rush_multiplier)||7),pendingBillTier:row.pending_bill_tier||null,
     pendingBillUntilMs:Math.max(0,Number(row.pending_bill_until_ms)||0),billClaims:decodeJson(row.bill_claims_json||"{}",{}),
     achievements:decodeJson(row.achievements_json||"[]",[]),achievementClaims:decodeJson(row.achievement_claims_json||"[]",[]),
-    crateInventory:decodeJson(row.crate_inventory_json||"{}",{}),freeCrateClaims:decodeJson(row.free_crate_claims_json||"{}",{}),rewardCosmetics:decodeJson(row.reward_cosmetics_json||"[]",[]),
+    crateInventory:decodeJson(row.crate_inventory_json||"{}",{}),freeCrateClaims:decodeJson(row.free_crate_claims_json||"{}",{}),rewardCosmetics:decodeJson(row.reward_cosmetics_json||"[]",[]),businessRevenue:decodeJson(row.business_revenue_json||"{}",{}),
     highestRate:Math.max(0,Number(row.highest_rate)||0),
     businessesPurchased:Math.max(Number(row.businesses_purchased)||0,Object.values(businesses).reduce((a,b)=>a+Math.max(0,Math.floor(b||0)),0)),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
@@ -81,6 +81,7 @@ function normalizeExtras(s){
   s.crateInventory=s.crateInventory&&typeof s.crateInventory==="object"&&!Array.isArray(s.crateInventory)?s.crateInventory:{};
   s.freeCrateClaims=s.freeCrateClaims&&typeof s.freeCrateClaims==="object"&&!Array.isArray(s.freeCrateClaims)?s.freeCrateClaims:{};
   s.rewardCosmetics=Array.isArray(s.rewardCosmetics)?s.rewardCosmetics:[];
+  s.businessRevenue=s.businessRevenue&&typeof s.businessRevenue==="object"&&!Array.isArray(s.businessRevenue)?s.businessRevenue:{};
   s.highestRate=Math.max(0,Number(s.highestRate)||0);
   s.businessesPurchased=Math.max(0,Math.floor(Number(s.businessesPurchased)||0));
   s.slotsUnlocked=Math.max(1,Math.min(4,Number(s.slotsUnlocked)||1));
@@ -135,8 +136,15 @@ function advance(s,now,entitled){
   if(!offline&&s.rushUntilMs>start&&s.rushUntilMs<end)boundaries.push(s.rushUntilMs);
   boundaries.sort((a,b)=>a-b);
   let produced=0;
-  for(let i=1;i<boundaries.length;i++){const mid=(boundaries[i-1]+boundaries[i])/2;produced+=businessRate(s,entitled,mid)*(boundaries[i]-boundaries[i-1])/1000*(!offline&&mid<s.rushUntilMs?s.rushMultiplier:1);}
-  award(s,produced*efficiency);
+  for(let i=1;i<boundaries.length;i++){
+    const mid=(boundaries[i-1]+boundaries[i])/2;
+    const seconds=(boundaries[i]-boundaries[i-1])/1000*(!offline&&mid<s.rushUntilMs?s.rushMultiplier:1)*efficiency;
+    for(const business of BUSINESS){
+      const earned=(s.businesses[business.id]||0)*unitRate(s,business,entitled,mid)*seconds;
+      if(earned>0){produced+=earned;s.businessRevenue[business.id]=capped((Number(s.businessRevenue[business.id])||0)+earned);}
+    }
+  }
+  award(s,produced);
   s.highestRate=Math.max(s.highestRate,businessRate(s,entitled,now));
   s.lastAccrualMs=now;
 }
@@ -406,16 +414,17 @@ async function ensureProgress(env,userId,now){
   return env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(userId).first();
 }
 const scoreSql=`WITH scores AS (
-  SELECT u.id,u.username,p.rebirths,
+  SELECT u.id,u.username,p.rebirths,cl.cosmetic_id AS profile_cosmetic,
     MIN(1e300,p.lifetime_cash+p.rate_per_second*MIN(MAX((? - p.last_accrual_ms)/1000.0,0),p.offline_cap_seconds)*CASE WHEN ?-p.last_accrual_ms>60000 THEN p.offline_efficiency ELSE 1 END) AS lifetime_cash
-  FROM progress p JOIN users u ON u.id=p.user_id WHERE u.username_set=1 AND NOT EXISTS(SELECT 1 FROM moderation_state m WHERE m.user_id=u.id AND (m.banned_at_ms IS NOT NULL OR m.suspended_until_ms>?))
+  FROM progress p JOIN users u ON u.id=p.user_id LEFT JOIN cosmetic_loadout cl ON cl.user_id=u.id AND cl.slot='profile' WHERE u.username_set=1 AND NOT EXISTS(SELECT 1 FROM moderation_state m WHERE m.user_id=u.id AND (m.banned_at_ms IS NOT NULL OR m.suspended_until_ms>?))
 ), ranked AS (
-  SELECT id,username,rebirths,lifetime_cash,
+  SELECT id,username,rebirths,profile_cosmetic,lifetime_cash,
     ROW_NUMBER() OVER (ORDER BY lifetime_cash DESC,rebirths DESC,id ASC) AS rank
   FROM scores
 )`;
 function leaderboardEntry(row,userId){
-  return {rank:Number(row.rank),username:sanitizeUsername(row.username)||"Player",lifetimeCash:capped(row.lifetime_cash),rebirths:Math.max(0,Number(row.rebirths)||0),isSelf:row.id===userId};
+  const profile=COSMETIC_BY_ID.get(row.profile_cosmetic)?.slot==="profile"?row.profile_cosmetic:null;
+  return {rank:Number(row.rank),username:sanitizeUsername(row.username)||"Player",profile,lifetimeCash:capped(row.lifetime_cash),rebirths:Math.max(0,Number(row.rebirths)||0),isSelf:row.id===userId};
 }
 async function getLeaderboard(request,env,user){
   await infrastructureLimit(env,request,"leaderboard:"+(user?.id||"guest"));
@@ -439,7 +448,7 @@ function progressSummary(s,entitled){
     premiumBoosterSlots:s.premiumSlots||[],pendingDropUntilMs:s.pendingDropUntilMs,
     pendingBillTier:s.pendingBillUntilMs>Date.now()?s.pendingBillTier:null,pendingBillUntilMs:s.pendingBillUntilMs,
     billClaims:s.billClaims,achievements:s.achievements,achievementClaims:s.achievementClaims,
-    crateInventory:s.crateInventory,freeCrateClaims:s.freeCrateClaims,freeCrateStatus:freeCrateStatus(s.freeCrateClaims,Date.now()),rewardCosmetics:s.rewardCosmetics,highestRate:s.highestRate,
+    crateInventory:s.crateInventory,freeCrateClaims:s.freeCrateClaims,freeCrateStatus:freeCrateStatus(s.freeCrateClaims,Date.now()),rewardCosmetics:s.rewardCosmetics,businessRevenue:s.businessRevenue,highestRate:s.highestRate,
     rushUntilMs:s.rushUntilMs,rushMultiplier:s.rushMultiplier,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
 }
 function updateStatement(env,s,oldVersion,entitled){
@@ -450,7 +459,7 @@ function updateStatement(env,s,oldVersion,entitled){
     businesses_json=?,upgrades_json=?,prestige_json=?,playtime_ms=?,last_heartbeat_ms=?,
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
     pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,
-    pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,free_crate_claims_json=?,reward_cosmetics_json=?,highest_rate=?,businesses_purchased=?,
+    pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,free_crate_claims_json=?,reward_cosmetics_json=?,business_revenue_json=?,highest_rate=?,businesses_purchased=?,
     version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.diamonds,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
@@ -458,7 +467,7 @@ function updateStatement(env,s,oldVersion,entitled){
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
       s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
       (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),
-      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.freeCrateClaims),JSON.stringify(s.rewardCosmetics),s.highestRate,s.businessesPurchased,
+      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.freeCrateClaims),JSON.stringify(s.rewardCosmetics),JSON.stringify(s.businessRevenue),s.highestRate,s.businessesPurchased,
       s.userId,oldVersion
     );
 }
@@ -467,7 +476,7 @@ async function premiumSlots(env,userId){
   return (rows.results||[]).map(row=>Number(row.slot_number)).filter(slot=>slot===5||slot===6);
 }
 function initialProgress(userId,now){
-  return normalizeExtras({userId,balance:0,diamonds:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
+  return normalizeExtras({userId,balance:0,diamonds:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,businessRevenue:{},
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
     pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},rewardCosmetics:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
     upgrades:[],prestige:[],clickStreams:{},epoch:0,rebirthEra:1,version:0});
