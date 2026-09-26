@@ -220,9 +220,22 @@ test("additive migration retains an existing account and progress",()=>{
   db.prepare("INSERT INTO progress(user_id,balance,lifetime_cash,last_accrual_ms) VALUES('old',1234,5678,1)").run();
   db.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   db.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
-  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8"));
+  db.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); db.exec(readFileSync(new URL("../migrations/0007_backfill_bill_claims.sql",import.meta.url),"utf8"));
   const row=db.prepare("SELECT * FROM progress WHERE user_id='old'").get();
   assert.equal(row.balance,1234);assert.equal(row.lifetime_cash,5678);
   assert.equal(row.playtime_ms,0);assert.equal(row.booster_slots_unlocked,1);
+  db.close();
+});
+test("Golden Bill history is backfilled without doubling new claims",()=>{
+  const db=new DatabaseSync(":memory:");
+  for(const name of ["0001_leaderboard_store.sql","0002_google_accounts.sql","0003_playtime_boosters.sql","0004_cloud_click_streams.sql","0005_admin_moderation.sql","0006_store_cosmetics_bills.sql"])
+    db.exec(readFileSync(new URL("../migrations/"+name,import.meta.url),"utf8"));
+  db.prepare("INSERT INTO users(id,username,created_at_ms) VALUES('old','OldPlayer',1)").run();
+  db.prepare("INSERT INTO progress(user_id,last_accrual_ms,bill_claims_json) VALUES('old',1,?)").run(JSON.stringify({golden:1,emerald:2}));
+  for(let i=0;i<3;i++)db.prepare("INSERT INTO progress_actions(action_id,user_id,action_type,created_at_ms) VALUES(?, 'old', 'golden', ?)").run('claim-'+i,i+1);
+  const migration=readFileSync(new URL("../migrations/0007_backfill_bill_claims.sql",import.meta.url),"utf8");
+  db.exec(migration);db.exec(migration);
+  const claims=JSON.parse(db.prepare("SELECT bill_claims_json FROM progress WHERE user_id='old'").get().bill_claims_json);
+  assert.deepEqual(claims,{golden:3,emerald:2});
   db.close();
 });
