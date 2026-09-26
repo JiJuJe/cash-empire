@@ -893,3 +893,32 @@ html[data-cosmetic-tap^="pink_diamond"] .particle-note{color:#ffa9e1}html[data-c
 
 .rebirth-progress{height:10px;margin:6px 0 10px;border:1px solid #557c5b;border-radius:999px;background:#0d291d;overflow:hidden}
 .rebirth-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#71bb81,#e6be67);transition:width .25s ease}
+
+/* Give every progress tab the majority of the center column. Both lists scroll independently. */
+@media (min-width:901px){
+  .content-column{display:flex;flex-direction:column;height:calc(100vh - 42px);max-height:calc(100vh - 42px);overflow:hidden;padding:0 12px 8px}
+  .content-column .progress-area{flex:1 1 auto;height:auto;min-height:0;overflow-y:auto;scrollbar-color:#719b72 transparent}
+  .content-column .world-panel{flex:0 0 clamp(220px,38vh,430px);height:auto;min-height:0;overflow:hidden}
+  .content-column .world-panel .owned-business-list{flex:1;min-height:0;overflow-y:auto}
+}
+@media (min-width:601px) and (max-width:900px){
+  html:not(.fit-screen) .content-column{display:flex;flex-direction:column;height:calc(100vh - 42px);min-height:0;overflow:hidden;padding:0 10px 8px}
+  html:not(.fit-screen) .progress-area{flex:1 1 auto;height:auto;min-height:0;overflow-y:auto}
+  html:not(.fit-screen) .world-panel{flex:0 0 clamp(180px,34vh,300px);height:auto;min-height:0;overflow:hidden}
+  html:not(.fit-screen) .world-panel .owned-business-list{flex:1;min-height:0;overflow-y:auto}
+  html.fit-screen .progress-area{flex:0 0 72%}
+  html.fit-screen .world-panel{flex:1 1 28%}
+}
+@media (max-width:600px){
+  html:not(.fit-screen) .progress-area{height:clamp(360px,58vh,620px);max-height:none;min-height:0;overflow-y:auto}
+  html:not(.fit-screen) .world-panel{height:clamp(135px,20vh,210px);min-height:0;overflow:hidden}
+  html:not(.fit-screen) .world-panel .owned-business-list{flex:1;min-height:0;overflow-y:auto}
+  html.fit-screen .progress-area{flex:0 0 72%}
+  html.fit-screen .world-panel{flex:1 1 28%}
+}
+@media (max-width:600px) and (orientation:portrait){
+  html.fit-screen .columns{grid-template-rows:minmax(0,34%) minmax(0,40%) minmax(0,26%)}
+}
+@media (max-width:600px) and (orientation:portrait) and (max-height:700px){
+  html.fit-screen .columns{grid-template-rows:minmax(0,36%) minmax(0,40%) minmax(0,24%)}
+}
