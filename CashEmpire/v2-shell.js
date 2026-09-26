@@ -29,9 +29,9 @@
   homeButton.type = "button";
   homeButton.dataset.tab = "home";
   tabs.prepend(homeButton);
-  const order = ["home", "upgrades", "prestige", "boosters", "achievements", "leaderboard", "store", "stats", "cosmetics"];
+  const order = ["home", "upgrades", "prestige", "boosters", "crates", "achievements", "leaderboard", "store", "stats", "cosmetics"];
   const labels = {prestige:"REBIRTH"};
-  const icons = {home:"⌂",upgrades:"✦",prestige:"↗",boosters:"◆",achievements:"★",leaderboard:"▥",store:"▣",stats:"◫",cosmetics:"◈"};
+  const icons = {home:"⌂",upgrades:"✦",prestige:"↗",boosters:"◆",crates:"▣",achievements:"★",leaderboard:"▥",store:"▣",stats:"◫",cosmetics:"◈"};
   for (const key of order) {
     const button = key === "home" ? homeButton : tabs.querySelector(`[data-tab="${key}"], [data-feature="${key}"]`);
     if (!button) continue;
@@ -45,7 +45,11 @@
   }
   homeButton.classList.add("active");
   const navFoot = node("p", "v2-nav-foot", "BUILD YOUR FORTUNE");
-  nav.append(brand, navHeading, tabs, navFoot);
+  const discord = node("a", "v2-discord-link", "Join our Discord");
+  discord.href = "https://discord.gg/bTxv5wFAZA";
+  discord.target = "_blank";
+  discord.rel = "noopener noreferrer";
+  nav.append(brand, navHeading, tabs, discord, navFoot);
 
   const main = node("div", "v2-main");
   const home = node("div", "v2-home");

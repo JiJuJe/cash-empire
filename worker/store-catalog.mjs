@@ -14,8 +14,11 @@ export const PRODUCTS=[
   {id:'vault_background',name:'Vault Background',description:'A warm gold vault backdrop.',category:'cosmetics',priceCents:149,icon:'▤',cosmetics:{background:'vault_background'}},
   {id:'supporter_badge',name:'Supporter Profile Badge',description:'A badge beside your game name.',category:'cosmetics',priceCents:99,icon:'✧',cosmetics:{profile:'supporter_profile'}},
   {id:'luxury_vault_theme',name:'Luxury Vault Theme',description:'A complete black and gold look.',category:'themes',priceCents:599,icon:'♛',cosmetics:pack('luxury',all)},
-  {id:'cosmic_empire_theme',name:'Cosmic Empire Theme',description:'A complete cosmic look.',category:'themes',priceCents:799,icon:'✦',cosmetics:pack('cosmic',all)}
+  {id:'cosmic_empire_theme',name:'Cosmic Empire Theme',description:'A complete cosmic look.',category:'themes',priceCents:799,icon:'✦',cosmetics:pack('cosmic',all)},
+  {id:'crate_wood',name:'Wood Crate',description:'One Wood Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:50,icon:'▣',repeatable:true},
+  {id:'crate_iron',name:'Iron Crate',description:'One Iron Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:100,icon:'▣',repeatable:true},
+  {id:'crate_royal',name:'Royal Crate',description:'One Royal Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:300,icon:'▣',repeatable:true}
 ];
 export const PRODUCT_BY_ID=new Map(PRODUCTS.map(product=>[product.id,product]));
 export const COSMETIC_BY_ID=new Map(PRODUCTS.flatMap(product=>Object.entries(product.cosmetics||{}).map(([slot,id])=>[id,{id,slot,name:product.name}])));
-export function publicCatalog(){return PRODUCTS.map(({id,name,description,category,priceCents,icon,cosmetics})=>({id,name,description,category,priceCents,icon,cosmetics:cosmetics||{}}));}
+export function publicCatalog(){return PRODUCTS.map(({id,name,description,category,priceCents,icon,cosmetics,repeatable})=>({id,name,description,category,priceCents,icon,cosmetics:cosmetics||{},repeatable:Boolean(repeatable)}));}

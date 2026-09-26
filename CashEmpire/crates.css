@@ -1,0 +1,57 @@
+html.v2 .v2-discord-link{display:block;margin:12px 5px 0;padding:10px 12px;border:1px solid #7394b8;border-radius:9px;background:#253f62;color:#e9f1ff;font-size:12px;font-weight:800;text-decoration:none;text-align:center}
+html.v2 .v2-discord-link:hover{background:#345781;transform:translateY(-1px)}
+html.v2 .achievement{display:flex;flex-direction:column;gap:5px;min-height:132px}
+html.v2 .achievement .achievement-icon{display:none}
+html.v2 .achievement.claimable{border-color:#d5b15e;box-shadow:inset 0 0 0 1px #d5b15e66,0 0 15px #d5b15e22}
+html.v2 .v2-achievement-reward{margin-top:auto;color:#e9cb82;font-size:11px;font-weight:800}
+html.v2 .achievement.locked .v2-achievement-reward{opacity:.55}
+html.v2 .achievement button{min-height:30px;margin-top:5px;padding:5px 8px;border:1px solid #d8b867;border-radius:6px;background:linear-gradient(#e8ca7d,#c59643);color:#193328;font-size:10px;font-weight:900}
+html.v2 .achievement button:disabled{border-color:#557266;background:#2b4c42;color:#b2ccba}
+html.v2 .v2-crate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:22px}
+html.v2 .v2-crate-card{min-width:0;overflow:hidden;border:1px solid #597f70;border-radius:17px;background:linear-gradient(160deg,#234844,#112e37);box-shadow:0 13px 25px #0004}
+html.v2 .v2-crate-card.iron{border-color:#829fae;background:linear-gradient(160deg,#31515c,#122c39)}
+html.v2 .v2-crate-card.royal{border-color:#c69c60;background:linear-gradient(160deg,#544630,#152d37)}
+html.v2 .v2-crate-art{position:relative;height:175px;overflow:hidden;background:radial-gradient(circle at 50% 70%,#8bb68155,transparent 56%),linear-gradient(#1d3e3e,#102b35)}
+html.v2 .v2-crate-card.iron .v2-crate-art{background:radial-gradient(circle at 50% 70%,#87b8d288,transparent 56%),linear-gradient(#294656,#102a37)}
+html.v2 .v2-crate-card.royal .v2-crate-art{background:radial-gradient(circle at 50% 70%,#e7bb6f88,transparent 56%),linear-gradient(#57482f,#142a35)}
+html.v2 .v2-crate-art:before{content:"";position:absolute;left:50%;bottom:20px;width:150px;height:90px;transform:translateX(-50%);border:5px solid #3b2416;border-radius:10px 10px 17px 17px;background:repeating-linear-gradient(90deg,#98623b 0 30px,#7c4b2e 30px 37px);box-shadow:inset 0 10px #ffffff24,0 12px 16px #0008}
+html.v2 .iron .v2-crate-art:before{border-color:#304354;background:repeating-linear-gradient(90deg,#8ba5af 0 30px,#657f8b 30px 37px)}
+html.v2 .royal .v2-crate-art:before{border-color:#6d4c21;background:repeating-linear-gradient(90deg,#caa159 0 30px,#9c7339 30px 37px)}
+html.v2 .v2-crate-lid{position:absolute;z-index:2;left:50%;bottom:104px;width:165px;height:28px;transform:translateX(-50%);border:5px solid #3b2416;border-radius:12px 12px 3px 3px;background:#b87943;box-shadow:0 4px 6px #0007}
+html.v2 .iron .v2-crate-lid{border-color:#304354;background:#a8c2c9}
+html.v2 .royal .v2-crate-lid{border-color:#6d4c21;background:#e7ba68}
+html.v2 .v2-crate-keyhole{position:absolute;z-index:3;left:50%;bottom:64px;width:25px;height:30px;transform:translateX(-50%);border:4px solid #5b3e18;border-radius:5px;background:#edc471;box-shadow:0 2px 7px #0008}
+html.v2 .v2-crate-keyhole:after{content:"";position:absolute;left:9px;top:7px;width:5px;height:12px;border-radius:5px;background:#674820}
+html.v2 .v2-crate-info{display:flex;flex-direction:column;gap:9px;padding:17px}
+html.v2 .v2-crate-tier{color:#e7c781;font-size:10px;font-weight:900;letter-spacing:.15em}
+html.v2 .v2-crate-info h3{margin:0;font-size:25px}
+html.v2 .v2-crate-info p{margin:0;color:#bfd5c9;font-size:12px}
+html.v2 .v2-crate-odds{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}
+html.v2 .v2-crate-odds span{padding:7px;border:1px solid #5d8172;border-radius:6px;color:#ead08f;font-size:10px;font-weight:800;text-align:center}
+html.v2 .v2-crate-preview{padding:8px 10px;border:1px solid #547668;border-radius:8px;background:#0f2932}
+html.v2 .v2-crate-preview summary{cursor:pointer;color:#eff4d9;font-size:12px;font-weight:800}
+html.v2 .v2-crate-preview p{margin-top:8px;font-size:11px;line-height:1.45}
+html.v2 .v2-crate-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}
+html.v2 .v2-crate-actions button{min-height:38px;padding:6px;border:1px solid #d8bc76;border-radius:7px;background:#dabb71;color:#203629;font-size:11px;font-weight:900}
+html.v2 .v2-crate-actions button:nth-child(2){background:#30505e;color:#f0f2e7}
+html.v2 .v2-crate-actions button:nth-child(3){grid-column:1/-1;background:linear-gradient(#6cad79,#387858);color:#fff}
+html.v2 .v2-crate-actions button:disabled{opacity:.45}
+html.v2 .v2-crate-pay-note{grid-column:1/-1;color:#a8c5bc;font-size:10px;line-height:1.35}
+html.v2 .v2-crate-reveal[hidden]{display:none}
+html.v2 .v2-crate-reveal{position:fixed;z-index:1000;inset:0;display:grid;place-items:center}
+html.v2 .v2-reveal-backdrop{position:absolute;inset:0;background:#031019dc;backdrop-filter:blur(8px)}
+html.v2 .v2-reveal-content{position:relative;display:grid;justify-items:center;gap:10px;width:min(90vw,460px);padding:35px 24px;border:1px solid #c2a669;border-radius:22px;background:radial-gradient(circle at 50% 45%,#2d5b51,#0d2833 75%);box-shadow:0 25px 75px #000b;text-align:center}
+html.v2 .v2-reveal-chest{position:relative;width:190px;height:130px;margin:30px 0 8px;border:7px solid #51361d;border-radius:14px;background:repeating-linear-gradient(90deg,#a96d3c 0 36px,#84522e 36px 43px);box-shadow:0 15px 30px #0008;animation:v2CrateShake 1.8s ease-in-out forwards}
+html.v2 .v2-reveal-lid{position:absolute;left:-13px;top:-26px;width:202px;height:32px;border:7px solid #51361d;border-radius:10px;background:#c7894c;transform-origin:15% 90%}
+html.v2 .v2-reveal-lock{position:absolute;left:73px;top:37px;width:32px;height:39px;border:5px solid #6a471b;border-radius:6px;background:#f0c46d}
+html.v2 .v2-crate-reveal.revealed .v2-reveal-chest{animation:v2CrateBurst .6s forwards}
+html.v2 .v2-crate-reveal.revealed .v2-reveal-lid{transform:rotate(-45deg) translateY(-50px);transition:transform .5s}
+html.v2 .v2-reveal-kicker{margin:0;color:#e9c980;font-size:11px;font-weight:900;letter-spacing:.17em}
+html.v2 .v2-reveal-content h2{margin:0;color:#fff4d3;font-size:28px}
+html.v2 #crateRevealReward{min-height:32px;margin:0;color:#f4d47c;font-size:21px;font-weight:900}
+html.v2 #crateRevealClose{padding:10px 20px;border:1px solid #f2d286;border-radius:8px;background:#e4bf68;color:#203627;font-weight:900}
+html.v2 #crateRevealClose[hidden]{display:none}
+@keyframes v2CrateShake{0%,15%,35%,55%,75%{transform:rotate(-4deg)}10%,25%,45%,65%,85%{transform:rotate(4deg)}100%{transform:scale(1.04)}}
+@keyframes v2CrateBurst{50%{transform:scale(1.18);filter:drop-shadow(0 0 34px #ffd682)}100%{transform:scale(1.04)}}
+html.v2.reduce-motion .v2-reveal-chest,html.v2.reduce-motion .v2-crate-reveal.revealed .v2-reveal-chest{animation:none}
+@media(max-width:760px){html.v2 .v2-discord-link{display:block;width:max-content;min-height:32px;margin:5px 4px 0;padding:6px 10px;font-size:10px}html.v2 .v2-crate-list{grid-template-columns:1fr}html.v2 .v2-crate-art{height:150px}}

@@ -78,6 +78,11 @@
     ["moneyKing","Money King","mythic","total",.60,"+60% total earnings"],
     ["infiniteSponsor","Infinite Sponsor","mythic","business",.75,"+75% business earnings"]
   ].map(([id,name,rarity,effect,value,description])=>({id,name,rarity,effect,value,description}));
+  const CRATES=[
+    {id:"wood",name:"Wood Crate",cashPrice:25000,priceCents:50,weights:{cash:55,booster:30,cosmetic:12,crate:3},cashRange:[5000,40000],boosterRarities:["common","rare"],cosmetics:["Emerald pile","Emerald click","Neon click"],nextCrate:"Iron Crate"},
+    {id:"iron",name:"Iron Crate",cashPrice:2500000,priceCents:100,weights:{cash:35,booster:40,cosmetic:20,crate:5},cashRange:[200000,4000000],boosterRarities:["rare","epic","legendary"],cosmetics:["Diamond pile","Diamond click","Black & Gold cards","Vault background"],nextCrate:"Royal Crate"},
+    {id:"royal",name:"Royal Crate",cashPrice:100000000,priceCents:300,weights:{cash:20,booster:40,cosmetic:32,crate:8},cashRange:[10000000,180000000],boosterRarities:["epic","legendary","mythic"],cosmetics:["Pink Diamond pile","Obsidian pile","Cosmic pile","Luxury cards"],nextCrate:"Royal Crate"}
+  ];
   const SLOT_PRICES={2:10000000,3:1000000000,4:100000000000};
   const DROP_INTERVAL_MS=600000;
   const PRESTIGE = [...EARLY_PRESTIGE,
@@ -95,7 +100,7 @@
     version:1,money:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
-    upgrades:[],achievements:[],prestigeUpgrades:[],
+    upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
@@ -332,6 +337,9 @@
   [1,5,20,50].forEach((n,i)=>achievement("upgrade-"+n,["Smart Purchase","Growing Ideas","Upgrade Expert","Master Planner"][i],"Buy "+n+" upgrades","💡",s=>s.upgrades.length>=n));
   [1,10,100,500].forEach((n,i)=>achievement("collector-"+n,["A Helping Hand","Collection Crew","Cash Brigade","Collector Army"][i],"Own "+n+" Cash Collectors","✋",s=>s.businesses.collector>=n));
   [1,10,100].forEach((n,i)=>achievement("empire-"+n,["First Empire Point","Invested Future","Point Power"][i],"Earn "+n+" Empire Points","🪙",s=>s.empireTotal>=n));
+  const ACHIEVEMENT_LEVELS={earn:[1,100,1e4,1e6,1e9,1e12,1e15,1e18,1e21],click:[1,10,100,1000,10000,100000],business:[1,10,50,250,1000,5000],rate:[1,10,100,1000,10000,1000000,1e9,1e12],gold:[1,5,25,100],rebirth:[1,5,20,100],upgrade:[1,5,20,50],collector:[1,10,100,500],empire:[1,10,100]};
+  const ACHIEVEMENT_BASE={earn:25,click:20,business:100,rate:75,gold:500,rebirth:2500,upgrade:150,collector:60,empire:1000};
+  function achievementReward(id){const [type,value]=id.split("-"),index=ACHIEVEMENT_LEVELS[type]?.indexOf(Number(value))??-1;return index<0?0:Math.min(1e25,Math.round(ACHIEVEMENT_BASE[type]*Math.pow(8,index)));}
   function sumBusinesses(s=state) {return Object.values(s.businesses).reduce((a,b)=>a+b,0);}
   function checkAchievements() {
     let changed=false;
@@ -705,16 +713,24 @@
     }
   }
   function renderAchievements() {
-    $("achievementCount").textContent=state.achievements.length+" / "+ACHIEVEMENTS.length;
+    $("achievementCount").textContent=state.achievements.length+" / "+ACHIEVEMENTS.length+" unlocked · "+state.achievementClaims.length+" claimed";
     const grid=$("achievementGrid");grid.replaceChildren();
     for(const a of ACHIEVEMENTS) {
-      const unlocked=state.achievements.includes(a.id),card=document.createElement("div");
-      card.className="achievement"+(unlocked?"":" locked");
-      const icon=document.createElement("div");icon.className="achievement-icon";setArtIcon(icon,a.image,unlocked?a.icon:"?");
+      const unlocked=state.achievements.includes(a.id),claimed=state.achievementClaims.includes(a.id),card=document.createElement("div");
+      card.className="achievement"+(unlocked?"":" locked")+(unlocked&&!claimed?" claimable":"");
       const name=document.createElement("strong");name.textContent=unlocked?a.name:"Hidden achievement";
       const desc=document.createElement("p");desc.textContent=a.description;
-      card.append(icon,name,desc);grid.append(card);
+      const reward=document.createElement("span");reward.className="v2-achievement-reward";reward.textContent="Reward "+euro(achievementReward(a.id));
+      card.append(name,desc,reward);
+      if(unlocked)card.append(makeButton(claimed?"CLAIMED":"CLAIM REWARD",claimed,()=>claimAchievement(a.id)));
+      grid.append(card);
     }
+  }
+  function claimAchievement(id){
+    if(!state.achievements.includes(id)||state.achievementClaims.includes(id))return;
+    if(cloudMode){queueCloudAction({type:"claim_achievement",achievementId:id});return;}
+    const amount=achievementReward(id);state.achievementClaims.push(id);state.money+=amount;state.lifetime+=amount;state.runEarned+=amount;
+    toast("Achievement reward +"+euro(amount));afterAction();
   }
   function pointsAvailable() {return Math.max(0,state.empireTotal-state.empireSpent);}
   function pointsGain() {return state.runEarned<1000000?0:Math.floor(Math.sqrt(state.runEarned/1000000)*(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints")));}
@@ -784,6 +800,83 @@
       inventory.append(card);
     }
   }
+  function renderCrates(){
+    const list=$("crateList");list.replaceChildren();
+    for(const crate of CRATES){
+      const card=featureElement("article","v2-crate-card "+crate.id);
+      const visual=featureElement("div","v2-crate-art");visual.setAttribute("aria-hidden","true");
+      visual.append(featureElement("span","v2-crate-lid"),featureElement("span","v2-crate-keyhole"));
+      const info=featureElement("div","v2-crate-info");
+      info.append(featureElement("span","v2-crate-tier",crate.id.toUpperCase()+" TIER"),featureElement("h3","",crate.name),featureElement("p","","Owned: "+(state.crateInventory[crate.id]||0)));
+      const odds=featureElement("div","v2-crate-odds");
+      for(const [kind,weight] of Object.entries(crate.weights))odds.append(featureElement("span","",kind.toUpperCase()+" "+weight+"%"));
+      info.append(odds);
+      const preview=featureElement("details","v2-crate-preview");
+      preview.append(featureElement("summary","","Preview possible loot"));
+      const lines=[
+        "Cash: "+euro(crate.cashRange[0])+"–"+euro(crate.cashRange[1]),
+        "Boosters: "+crate.boosterRarities.map(r=>r.toUpperCase()).join(", "),
+        "Cosmetics: "+crate.cosmetics.join(", "),
+        "Bonus crate: "+crate.nextCrate,
+        "Duplicate cosmetics convert to "+euro(crate.cashRange[1])+" cash."
+      ];
+      for(const line of lines)preview.append(featureElement("p","",line));
+      info.append(preview);
+      const actions=featureElement("div","v2-crate-actions");
+      actions.append(makeButton("Buy for "+euro(crate.cashPrice),state.money<crate.cashPrice,()=>buyCrate(crate)));
+      const pay=makeButton(!account.authenticated?"Sign in · €"+(crate.priceCents/100).toFixed(2):!premiumStatus.paymentsAvailable?"€"+(crate.priceCents/100).toFixed(2)+" · unavailable":"Buy · €"+(crate.priceCents/100).toFixed(2),account.authenticated&&!premiumStatus.paymentsAvailable,()=>{
+        if(!account.authenticated){window.location.assign("/api/auth/google/start");return;}
+        beginPremiumCheckout("crate_"+crate.id,pay,note);
+      });
+      const note=featureElement("small","v2-crate-pay-note",account.authenticated?"Secure checkout adds 1 crate to this account":"Real-money purchases require Google Sign In");
+      actions.append(pay,makeButton("Open crate",!(state.crateInventory[crate.id]>0),()=>openCrate(crate)),note);
+      info.append(actions);card.append(visual,info);list.append(card);
+    }
+  }
+  function buyCrate(crate){
+    if(state.money<crate.cashPrice)return;
+    if(cloudMode){queueCloudAction({type:"buy_crate",crateId:crate.id});return;}
+    state.money-=crate.cashPrice;state.crateInventory[crate.id]=(state.crateInventory[crate.id]||0)+1;
+    toast(crate.name+" purchased");afterAction();
+  }
+  const CRATE_COSMETIC_IDS={wood:["emerald_pile","emerald_click","neon_click"],iron:["diamond_pile","diamond_click","black_gold_cards","vault_background"],royal:["pink_diamond_pile","obsidian_pile","cosmic_pile","luxury_cards"]};
+  function rollGuestCrate(crate){
+    const random=()=>crypto.getRandomValues(new Uint32Array(1))[0]/4294967296;
+    let roll=random()*100,kind="cash";
+    for(const [name,weight] of Object.entries(crate.weights)){roll-=weight;if(roll<0){kind=name;break;}}
+    if(kind==="cash")return {kind,amount:Math.round(crate.cashRange[0]+(crate.cashRange[1]-crate.cashRange[0])*random())};
+    if(kind==="booster"){
+      const pool=BOOSTERS.filter(b=>crate.boosterRarities.includes(b.rarity));
+      const b=pool[Math.floor(random()*pool.length)];return {kind,id:b.id,name:b.name,rarity:b.rarity};
+    }
+    if(kind==="cosmetic"){
+      const ids=CRATE_COSMETIC_IDS[crate.id],id=ids[Math.floor(random()*ids.length)];return {kind,id,name:crate.cosmetics[ids.indexOf(id)]};
+    }
+    const id=crate.id==="wood"?"iron":"royal";return {kind:"crate",id,name:CRATES.find(c=>c.id===id).name};
+  }
+  function openCrate(crate){
+    if(!(state.crateInventory[crate.id]>0))return;
+    if(cloudMode){queueCloudAction({type:"open_crate",crateId:crate.id});return;}
+    state.crateInventory[crate.id]--;
+    const reward=rollGuestCrate(crate);
+    if(reward.kind==="cash"){
+      state.money+=reward.amount;state.lifetime+=reward.amount;state.runEarned+=reward.amount;
+    }else if(reward.kind==="booster")state.boosterInventory[reward.id]=(state.boosterInventory[reward.id]||0)+1;
+    else if(reward.kind==="cosmetic"){
+      if(state.rewardCosmetics.includes(reward.id)){
+        reward.kind="cash";reward.amount=crate.cashRange[1];delete reward.id;delete reward.name;
+        state.money+=reward.amount;state.lifetime+=reward.amount;state.runEarned+=reward.amount;
+      }else state.rewardCosmetics.push(reward.id);
+    }else state.crateInventory[reward.id]=(state.crateInventory[reward.id]||0)+1;
+    afterAction();showCrateReveal(reward);
+  }
+  function showCrateReveal(reward){
+    const overlay=$("crateReveal");overlay.hidden=false;overlay.classList.remove("revealed");
+    $("crateRevealTitle").textContent="Opening...";$("crateRevealReward").textContent="";$("crateRevealClose").hidden=true;
+    const label=reward.kind==="cash"?euro(reward.amount):reward.name||reward.id;
+    const reveal=()=>{overlay.classList.add("revealed");$("crateRevealTitle").textContent="You found "+(reward.kind==="crate"?"another crate!":"a reward!");$("crateRevealReward").textContent=label;$("crateRevealClose").hidden=false;};
+    setTimeout(reveal,state.settings.animations?2100:80);
+  }
   function buyPrestige(p) {
     if(cloudMode){queueCloudAction({type:"buy_prestige",upgradeId:p.id});return;}
     if(hasPrestige(p.id)||pointsAvailable()<p.cost)return;
@@ -808,6 +901,7 @@
     else if(activeTab==="stats")renderStats();
     else if(activeTab==="achievements")renderAchievements();
     else if(activeTab==="boosters")renderBoosters();
+    else if(activeTab==="crates")renderCrates();
     else if(activeTab==="cosmetics")renderCosmetics();
     else if(activeTab==="prestige")renderPrestige();
     renderBusinesses();
@@ -988,7 +1082,11 @@
     catch(_){/* Keep the last verified inventory visible. */}
   }
   async function equipCosmetic(slot,id){
-    if(!cloudMode||!account.authenticated){toast("Sign in to equip account cosmetics.");return;}
+    if(!cloudMode||!account.authenticated){
+      if(id&&!state.rewardCosmetics.includes(id)){toast("Cosmetic not owned.");return;}
+      if(id)state.cosmeticLoadout[slot]=id;else delete state.cosmeticLoadout[slot];
+      cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};applyCosmeticLook();save();renderCosmetics();return;
+    }
     try{cosmetics=await apiJson("/api/cosmetics/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot,cosmeticId:id})});applyCosmeticLook();renderCosmetics();toast(id?"Cosmetic equipped":"Default look equipped");}
     catch(error){toast(error.message||"Cosmetic could not be equipped.");}
   }
@@ -1001,7 +1099,7 @@
   }
   function renderCosmetics(){
     const box=$("cosmeticsList");box.replaceChildren();
-    if(!account.authenticated){box.append(featureElement("p","section-intro","Sign in to sync your looks between devices."));return;}
+    if(!account.authenticated){cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};box.append(featureElement("p","section-intro","Guest crate rewards stay in this browser. Sign in for account cosmetics across devices."));}
     const names={pile:"Money pile skin",click:"Click effect",background:"Background theme",cards:"Business cards",profile:"Profile / username",tap:"Cursor / tap effect"};
     for(const [slot,label] of Object.entries(names)){
       const group=featureElement("section","cosmetic-group");group.append(featureElement("h3","",label));
@@ -1126,6 +1224,9 @@
     state.billClaims=data.billClaims&&typeof data.billClaims==="object"?data.billClaims:{};
     state.goldenClicked=Object.values(state.billClaims).reduce((sum,count)=>sum+safeNumber(count),0);
     if(Array.isArray(data.achievements))state.achievements=data.achievements;
+    state.achievementClaims=Array.isArray(data.achievementClaims)?data.achievementClaims:[];
+    state.crateInventory=data.crateInventory&&typeof data.crateInventory==="object"?data.crateInventory:{};
+    state.rewardCosmetics=Array.isArray(data.rewardCosmetics)?data.rewardCosmetics:[];
     for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
     state.upgrades=Array.isArray(data.upgrades)?data.upgrades:[];
     state.prestigeUpgrades=Array.isArray(data.prestigeUpgrades)?data.prestigeUpgrades:[];
@@ -1143,6 +1244,11 @@
     if(data.event?.type==="boosterDrop"){
       const found=BOOSTERS.find(b=>b.id===data.event.boosterId);
       if(found)toast("Booster found: "+found.name+" ("+found.rarity+")!");
+    }
+    if(data.event?.type==="achievementReward")toast("Achievement reward +"+euro(data.event.amount));
+    if(data.event?.type==="crateOpened"){
+      showCrateReveal(data.event.reward);
+      if(data.event.reward?.kind==="cosmetic")refreshCosmetics();
     }
     state.lastPlayed=Date.now();
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
@@ -1325,6 +1431,10 @@
     s.upgrades=Array.isArray(raw.upgrades)?[...new Set(raw.upgrades.filter(x=>validUpgrades.has(x)))]:[];
     const validAchievements=new Set(ACHIEVEMENTS.map(a=>a.id));
     s.achievements=Array.isArray(raw.achievements)?[...new Set(raw.achievements.filter(x=>validAchievements.has(x)))]:[];
+    s.achievementClaims=Array.isArray(raw.achievementClaims)?[...new Set(raw.achievementClaims.filter(x=>validAchievements.has(x)&&s.achievements.includes(x)))]:[];
+    for(const crate of CRATES)s.crateInventory[crate.id]=Math.min(1000000,Math.floor(safeNumber(raw.crateInventory?.[crate.id])));
+    s.rewardCosmetics=Array.isArray(raw.rewardCosmetics)?[...new Set(raw.rewardCosmetics.filter(x=>typeof x==="string"&&x.length<80))]:[];
+    s.cosmeticLoadout=raw.cosmeticLoadout&&typeof raw.cosmeticLoadout==="object"?raw.cosmeticLoadout:{};
     const validPrestige=new Set(PRESTIGE.map(p=>p.id));
     s.prestigeUpgrades=Array.isArray(raw.prestigeUpgrades)?[...new Set(raw.prestigeUpgrades.filter(x=>validPrestige.has(x)))]:[];
     s.empireSpent=Math.min(s.empireTotal,s.empireSpent);
@@ -1342,6 +1452,7 @@
     try {const text=localStorage.getItem(SAVE_KEY);if(text)state=normalize(JSON.parse(text));
       if(state.rushUntilMs>Date.now())buff={type:"goldrush",mult:7,until:state.rushUntilMs};}
     catch (_) {state=defaultState();toast("Saved data could not be read. A fresh game has started.");}
+    cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};applyCosmeticLook();
   }
   function exportSave() {
     save();
@@ -1381,7 +1492,7 @@
       {label:"Cancel",action:()=>{}},
       {label:"Rebirth",action:()=>{
         if(cloudMode){queueCloudAction({type:"rebirth"});return;}
-        const keep={lifetime:state.lifetime,achievements:state.achievements,prestigeUpgrades:state.prestigeUpgrades,
+        const keep={lifetime:state.lifetime,achievements:state.achievements,achievementClaims:state.achievementClaims,crateInventory:state.crateInventory,rewardCosmetics:state.rewardCosmetics,cosmeticLoadout:state.cosmeticLoadout,prestigeUpgrades:state.prestigeUpgrades,
           empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
           totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
           highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings,
@@ -1583,6 +1694,7 @@
     $("goldenBill").addEventListener("click",claimGolden);
     $("goldenBillArt").addEventListener("error",()=>$("goldenBill").classList.add("asset-failed"),{once:true});
     $("boosterDrop").addEventListener("click",claimBoosterDrop);
+    $("crateRevealClose").addEventListener("click",()=>{$("crateReveal").hidden=true;});
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
       buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();updateV2SceneControls();
