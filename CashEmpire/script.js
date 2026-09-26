@@ -116,7 +116,7 @@
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const LOCAL_BACKUP="cash-empire-local-backup-v1";
   let featureMode = null;
-  let buyAmount = "1",activeTab = "upgrades",sessionActiveSeconds=0,lastTick = Date.now(),lastHeartbeatSent=0,heartbeatBusy=false;
+  let buyAmount = "1",activeTab = "home",sessionActiveSeconds=0,lastTick = Date.now(),lastHeartbeatSent=0,heartbeatBusy=false;
   let goldenExpires = 0,goldenNext = Date.now() + 250000,billTier="golden",buff = null;
   let audioContext = null,renderTimer = 0,achievementTimer = 0,pileTimer = 0,lastClickSave = 0,ambientNext=Date.now()+7000;
   let musicMuted = false, musicVolume = 30, musicStarted = false;
@@ -401,6 +401,45 @@
     const admin=cloudMode?cloudAdminBoosts.filter(b=>b.expiresAtMs===null||b.expiresAtMs>Date.now()).map(b=>"ADMIN "+b.kind.toUpperCase()+" ×"+b.multiplier).join(" · "):"";
     $("buffBar").textContent=[rush,admin].filter(Boolean).join(" · ");
     updatePile();
+    renderV2Status();
+  }
+  let lastV2StatusRender=0;
+  function renderV2Status(){
+    if(!document.documentElement.classList.contains("v2")||Date.now()-lastV2StatusRender<900)return;
+    lastV2StatusRender=Date.now();
+    const boosterPanel=document.querySelector(".v2-boost-panel"),eventPanel=document.querySelector(".v2-event-panel");
+    if(!boosterPanel||!eventPanel)return;
+    boosterPanel.replaceChildren();
+    const title=document.createElement("div");title.className="v2-panel-title";
+    const heading=document.createElement("h2");heading.textContent="Active boosters";
+    const count=document.createElement("span");count.textContent=state.equippedBoosters.filter(Boolean).length+" / "+Array.from({length:6},(_,i)=>i+1).filter(boosterSlotOpen).length;
+    title.append(heading,count);boosterPanel.append(title);
+    const equipped=state.equippedBoosters.map((id,i)=>({id,slot:i+1})).filter(item=>item.id);
+    if(!equipped.length)boosterPanel.append(featureElement("p","v2-status-empty","No boosters equipped yet. Find and equip them on the Boosters page."));
+    for(const item of equipped){
+      const booster=BOOSTERS.find(b=>b.id===item.id);if(!booster)continue;
+      const row=featureElement("div","v2-status-row");
+      row.append(featureElement("span","v2-status-gem "+booster.rarity,"◆"));
+      const copy=featureElement("div");copy.append(featureElement("strong","",booster.name),featureElement("small","",booster.description));
+      row.append(copy,featureElement("span","v2-slot-number",String(item.slot)));boosterPanel.append(row);
+    }
+    for(const boost of cloudAdminBoosts.filter(b=>b.expiresAtMs===null||b.expiresAtMs>Date.now())){
+      const row=featureElement("div","v2-status-row admin");
+      row.append(featureElement("span","v2-status-gem","✦"));
+      const copy=featureElement("div");copy.append(featureElement("strong","","Admin "+boost.kind+" boost"),featureElement("small","","×"+boost.multiplier+(boost.expiresAtMs?" · "+duration(Math.ceil((boost.expiresAtMs-Date.now())/1000))+" left":" · Permanent")));
+      row.append(copy);boosterPanel.append(row);
+    }
+    eventPanel.replaceChildren(featureElement("h2","v2-panel-title","Active event"));
+    const now=Date.now();
+    if(buff&&buff.until>now){
+      const row=featureElement("div","v2-event-active");row.append(featureElement("span","v2-event-art","✦"),featureElement("strong","","Golden Rush"),featureElement("small","","All earnings ×"+buff.mult+" · "+Math.ceil((buff.until-now)/1000)+"s left"));eventPanel.append(row);
+    }else if(goldenExpires>now){
+      const row=featureElement("div","v2-event-active");
+      const art=document.createElement("img");art.src="assets/bills/"+billTier.replaceAll("_","-")+"-bill.png";art.alt="";
+      row.append(art,featureElement("strong","",billTier.replaceAll("_"," ")+" Bill"),featureElement("small","","Tap the bill on the cash pile · "+Math.ceil((goldenExpires-now)/1000)+"s"));eventPanel.append(row);
+    }else if(state.pendingDropUntilMs>now){
+      const row=featureElement("div","v2-event-active");row.append(featureElement("span","v2-event-art","◆"),featureElement("strong","","Booster Drop"),featureElement("small","","Claim beside the cash pile · "+Math.ceil((state.pendingDropUntilMs-now)/1000)+"s"));eventPanel.append(row);
+    }else eventPanel.append(featureElement("p","v2-status-empty","No active event. Watch the cash pile for the next Golden Bill."));
   }
   function compactGroup(amount) {
     if(amount<1000)return String(amount);
@@ -412,6 +451,33 @@
     const list=$("ownedBusinessList"),total=sumBusinesses();
     $("ownedTotal").textContent=total.toLocaleString("en-US")+" owned";
     list.replaceChildren();
+    if(document.documentElement.classList.contains("v2")){
+      for(const b of BUSINESS){
+        const owned=state.businesses[b.id],quantity=selectedQuantity(b),want=displayedQuantity(b);
+        const scene=featureElement("article","v2-business-scene "+b.id+(owned?" is-owned":" is-locked"));
+        const stage=featureElement("div","v2-scene-stage");stage.setAttribute("aria-hidden","true");
+        stage.append(featureElement("span","v2-scene-light"),featureElement("span","v2-scene-floor"));
+        const art=document.createElement("img");art.src=b.image;art.alt="";art.loading="lazy";art.decoding="async";art.className="v2-scene-building";stage.append(art);
+        const worker=featureElement("span","v2-scene-worker");
+        worker.append(featureElement("i","v2-worker-head"),featureElement("i","v2-worker-body"),featureElement("i","v2-worker-arm"));stage.append(worker);
+        stage.append(featureElement("span","v2-scene-coin coin-one","$"),featureElement("span","v2-scene-coin coin-two","$"));
+        const details=featureElement("div","v2-scene-details");
+        details.append(featureElement("span","v2-scene-kicker",owned?"BUSINESS ACTIVE":"NEXT OPPORTUNITY"),featureElement("h3","",b.name));
+        const stats=featureElement("div","v2-scene-stats");
+        stats.append(featureElement("span","","Owned "+owned.toLocaleString("en-US")));
+        if(owned){
+          stats.append(featureElement("span","",euro(businessUnitRate(b),b.income<10?2:0)+" / sec each"));
+          stats.append(featureElement("strong","",euro(businessTotalRate(b),businessTotalRate(b)<10?2:0)+" / sec total"));
+        }
+        details.append(stats);
+        const controls=featureElement("div","v2-scene-controls");
+        const purchase=makeButton("BUY ×"+want+" · "+euro(totalCost(b,owned,want||1)),quantity===0,()=>buyBusiness(b));
+        purchase.className="v2-scene-buy";
+        controls.append(purchase);details.append(controls);
+        scene.append(stage,details);list.append(scene);
+      }
+      return;
+    }
     if(!total){
       const starter=document.createElement("div");
       starter.className="world-starter";
@@ -495,7 +561,17 @@
     $("upgradeCount").textContent=upgrades.length+" available";
     list.replaceChildren();
     if(!upgrades.length){const empty=document.createElement("div");empty.className="empty-state";empty.textContent="Keep earning. Your next upgrade is on its way.";list.append(empty);return;}
-    for(const u of upgrades) {
+    const clickIds=new Set(CLICK_UPGRADES.map(u=>u.id));
+    const groups=[
+      ["Click power",upgrades.filter(u=>clickIds.has(u.id)||SPECIAL_UPGRADES.some(s=>s.id===u.id&&s.effect==="click"))],
+      ["Business growth",upgrades.filter(u=>u.id.includes("-")||SPECIAL_UPGRADES.some(s=>s.id===u.id&&s.effect!=="click"))]
+    ];
+    for(const [title,items] of groups){
+      if(!items.length)continue;
+      if(document.documentElement.classList.contains("v2")){
+        const heading=document.createElement("h3");heading.className="v2-upgrade-group";heading.textContent=title;list.append(heading);
+      }
+      for(const u of items) {
       const card=document.createElement("div");card.className="upgrade-card"+(estimatedAvailableMoney()>=u.cost?" affordable":"");
       const icon=document.createElement("div");icon.className="upgrade-icon";
       setArtIcon(icon,u.image,u.icon);
@@ -505,6 +581,7 @@
       info.append(title,desc);
       card.append(icon,info,makeButton(euro(u.cost),estimatedAvailableMoney()<u.cost,()=>buyUpgrade(u)));
       list.append(card);
+      }
     }
   }
   function buyUpgrade(u) {
@@ -593,17 +670,26 @@
     state.businessesPurchased+=quantity;playTone(520);afterAction();
   }
   function renderStats() {
+    const topBusiness=BUSINESS.filter(b=>state.businesses[b.id]>0).sort((a,b)=>businessTotalRate(b)-businessTotalRate(a))[0];
     const values=[
-      ["Total clicks",format(state.totalClicks)],["Lifetime money earned",euro(state.lifetime)],
-      ["Current money",euro(state.money)],["Money per second",euro(currentRate(),1)],
-      ["Highest money per second",euro(state.highestRate,1)],["Businesses purchased",format(state.businessesPurchased)],
-      ["Golden Bills clicked",format(state.goldenClicked)],["Achievements unlocked",state.achievements.length+" / "+ACHIEVEMENTS.length],
-      ["Rebirths",format(state.rebirths)],["Total playtime",duration(state.totalPlaytime)],
-      ["Current session",duration(sessionActiveSeconds)],["Empire Points",format(state.empireTotal)]
+      ["Current money",euro(state.money),"Wealth"],["Lifetime money earned",euro(state.lifetime),"Wealth"],
+      ["Earned this run",euro(state.runEarned),"Wealth"],["Money per second",euro(currentRate(),1),"Wealth"],
+      ["Highest money per second",euro(state.highestRate,1),"Wealth"],
+      ["Businesses owned",format(sumBusinesses()),"Businesses"],["Businesses purchased",format(state.businessesPurchased),"Businesses"],
+      ["Top producer",topBusiness?topBusiness.name:"None yet","Businesses"],
+      ["Total clicks",format(state.totalClicks),"Clicking"],["Money per click",euro(clickValue(),1),"Clicking"],
+      ["Rebirths",format(state.rebirths),"Rebirth"],["Empire Points",format(state.empireTotal),"Rebirth"],
+      ["Permanent Rebirth bonus","+"+format(state.rebirths*10,0)+"%","Rebirth"],
+      ["Total playtime",duration(state.totalPlaytime),"Activity"],["Current session",duration(sessionActiveSeconds),"Activity"],
+      ["Golden Bills clicked",format(state.goldenClicked),"Activity"],["Achievements unlocked",state.achievements.length+" / "+ACHIEVEMENTS.length,"Activity"]
     ];
-    if(cloudMode)for(const [id,label] of [["golden","Golden Bills"],["emerald","Emerald Bills"],["diamond","Diamond Bills"],["pink_diamond","Pink Diamond Bills"],["obsidian","Obsidian Bills"]])values.push([label,format(state.billClaims?.[id]||0)]);
+    if(cloudMode)for(const [id,label] of [["golden","Golden Bills"],["emerald","Emerald Bills"],["diamond","Diamond Bills"],["pink_diamond","Pink Diamond Bills"],["obsidian","Obsidian Bills"]])values.push([label,format(state.billClaims?.[id]||0),"Activity"]);
     const grid=$("statsGrid");grid.replaceChildren();
-    for(const [label,value] of values) {
+    let previousGroup="";
+    for(const [label,value,group] of values) {
+      if(group!==previousGroup&&document.documentElement.classList.contains("v2")){
+        const heading=document.createElement("h3");heading.className="v2-stat-group";heading.textContent=group;grid.append(heading);previousGroup=group;
+      }
       const cell=document.createElement("div");cell.className="stat";
       const span=document.createElement("span");span.textContent=label;
       const strong=document.createElement("strong");strong.textContent=value;
@@ -645,6 +731,7 @@
     const nextTarget=Math.max(1000000,Math.ceil(Math.pow(gain+1,2)*1000000/Math.pow(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints"),2)));
     $("rebirthNext").textContent=gain?"Eligible now. Next Empire Point near "+euro(nextTarget)+" earned this run.":euro(1000000-state.runEarned)+" more earned this run to unlock Rebirth.";
     $("rebirthButton").disabled=gain<=0;
+    $("rebirthButton").textContent="REBIRTH FOR +"+format(gain)+" EMPIRE POINT"+(gain===1?"":"S");
     for(const [target,upgrades] of [["earlyPrestigeTree",PRESTIGE.filter(p=>p.early)],["prestigeTree",PRESTIGE.filter(p=>!p.early)]]){
       const tree=$(target);tree.replaceChildren();
       for(const p of upgrades){
@@ -705,17 +792,36 @@
   function afterAction() {
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
   }
+  function updateV2SceneControls(){
+    if(!document.documentElement.classList.contains("v2"))return;
+    for(const b of BUSINESS){
+      const button=$("ownedBusinessList").querySelector(".v2-business-scene."+b.id+" .v2-scene-buy");
+      if(!button)continue;
+      const owned=state.businesses[b.id],want=displayedQuantity(b);
+      button.textContent="BUY ×"+want+" · "+euro(totalCost(b,owned,want||1));
+      button.disabled=selectedQuantity(b)===0;
+    }
+  }
   function renderCurrent() {
-    if(activeTab==="upgrades")renderUpgrades();
+    if(activeTab==="home")updateV2SceneControls();
+    else if(activeTab==="upgrades")renderUpgrades();
     else if(activeTab==="stats")renderStats();
     else if(activeTab==="achievements")renderAchievements();
     else if(activeTab==="boosters")renderBoosters();
     else if(activeTab==="cosmetics")renderCosmetics();
-    else renderPrestige();
+    else if(activeTab==="prestige")renderPrestige();
     renderBusinesses();
   }
   function switchTab(tab) {
     activeTab=tab;
+    featureMode=null;
+    if(document.documentElement.classList.contains("v2")){
+      $("v2Home").hidden=tab!=="home";
+      document.querySelector(".content-column").hidden=tab==="home";
+      document.querySelector(".progress-area").hidden=tab==="home";
+      $("featureBackdrop").hidden=true;
+      if(tab!=="home")document.querySelector(".progress-area").scrollTop=0;
+    }
     document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
     document.querySelectorAll(".tab-panel").forEach(p=>{const on=p.id==="tab-"+tab;p.hidden=!on;p.classList.toggle("active",on);});
     renderCurrent();
@@ -738,6 +844,13 @@
   function openFeature(name) {
     featureMode=name;
     $("featureModal").className="feature-modal"+(name==="store"?" store-view":name==="leaderboard"?" leaderboard-view":"");
+    if(document.documentElement.classList.contains("v2")){
+      activeTab="home";
+      $("v2Home").hidden=true;
+      document.querySelector(".content-column").hidden=false;
+      document.querySelector(".progress-area").hidden=true;
+      document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.feature===name));
+    }
     $("featureBackdrop").hidden=false;
     if(name==="leaderboard")renderLeaderboard();
     else {renderPremiumStore();refreshPremiumStatus().then(()=>{renderTop();renderOwned();renderCurrent();});}
@@ -745,6 +858,7 @@
   function closeFeature() {
     featureMode=null;
     $("featureBackdrop").hidden=true;
+    if(document.documentElement.classList.contains("v2"))switchTab("home");
   }
   async function apiJson(path,options={}) {
     const controller=new AbortController();
@@ -1471,7 +1585,7 @@
     $("boosterDrop").addEventListener("click",claimBoosterDrop);
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>b.dataset.feature?openFeature(b.dataset.feature):switchTab(b.dataset.tab)));
     document.querySelectorAll(".buy-option").forEach(b=>b.addEventListener("click",()=>{
-      buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();
+      buyAmount=b.dataset.buy;document.querySelectorAll(".buy-option").forEach(x=>x.classList.toggle("active",x===b));renderBusinesses();updateV2SceneControls();
     }));
     $("exportSave").addEventListener("click",exportSave);
     $("importSave").addEventListener("click",importSave);
@@ -1499,7 +1613,7 @@
       if(document.hidden){save();pauseHeartbeat();if(cloudMode)queueCloudAction(null);}
       else {const now=Date.now(),away=Math.max(0,(now-lastTick)/1000);if(away>0&&!cloudMode)earnBusinesses(Math.min(away,OFFLINE_CAP)*(hasPrestige("offlineOffice")?.6:.5)*(1+boosterBonus("offline")),false);lastTick=now;if(cloudMode){refreshAccount().then(()=>{cloudClickDue=true;startCloudDrain();sendHeartbeat(true);});}}
     });
-    renderTop();renderOwned();renderCurrent();updateDropDisplay();checkAchievements();rotateTicker();setInterval(tick,100);
+    renderTop();renderOwned();switchTab("home");updateDropDisplay();checkAchievements();rotateTicker();setInterval(tick,100);
     setInterval(save,10000);
   }
   window.CashEmpireMath={totalCost,maxAffordable,format,businessUnitRate,earnBusinesses,getWealthVisualTier,configs:BUSINESS};
