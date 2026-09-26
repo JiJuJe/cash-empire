@@ -92,7 +92,7 @@
   const $ = id => document.getElementById(id);
   const moneyEl = $("balance"), rateEl = $("rate"), pileEl = $("moneyPile");
   const defaultState = () => ({
-    version:1,money:0,runEarned:0,lifetime:0,
+    version:1,globalResetVersion:2,money:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     upgrades:[],achievements:[],prestigeUpgrades:[],
@@ -1201,8 +1201,23 @@
     try {state.lastPlayed=Date.now();localStorage.setItem(SAVE_KEY,JSON.stringify(state));}
     catch (_) {toast("Browser storage is unavailable. Export your save to keep progress.");}
   }
+  function migratePreResetSave(raw) {
+    if(raw.globalResetVersion===2)return raw;
+    const played=Number(raw.money)>0||Number(raw.runEarned)>0||Number(raw.lifetime)>0||
+      Number(raw.totalClicks)>0||Number(raw.totalPlaytime)>0||Number(raw.rebirths)>0||
+      Number(raw.businessesPurchased)>0||Object.values(raw.businesses||{}).some(count=>Number(count)>0);
+    const fresh=defaultState();
+    fresh.money=played?1000000:0;
+    fresh.boosterInventory=raw.boosterInventory;
+    fresh.equippedBoosters=raw.equippedBoosters;
+    fresh.boosterSlotsUnlocked=raw.boosterSlotsUnlocked;
+    fresh.premiumBoosterSlots=raw.premiumBoosterSlots;
+    fresh.settings=raw.settings;
+    return fresh;
+  }
   function normalize(raw) {
     if(!raw || typeof raw!=="object" || raw.version!==1)throw Error("Invalid save version.");
+    raw=migratePreResetSave(raw);
     const s=defaultState();
     for(const key of ["money","runEarned","lifetime","empireTotal","empireSpent","rebirths","totalClicks","businessesPurchased","goldenClicked","highestRate","totalPlaytime","lastPlayed"])
       s[key]=safeNumber(raw[key],s[key]);
@@ -1225,7 +1240,8 @@
     return s;
   }
   function load() {
-    try {const text=localStorage.getItem(SAVE_KEY);if(text)state=normalize(JSON.parse(text));
+    try {const text=localStorage.getItem(SAVE_KEY);if(text){const raw=JSON.parse(text);state=normalize(raw);
+        if(raw.globalResetVersion!==2)localStorage.setItem(SAVE_KEY,JSON.stringify(state));}
       if(state.rushUntilMs>Date.now())buff={type:"goldrush",mult:7,until:state.rushUntilMs};}
     catch (_) {state=defaultState();toast("Saved data could not be read. A fresh game has started.");}
   }
