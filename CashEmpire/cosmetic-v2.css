@@ -51,4 +51,9 @@ html.v2 .v2-scene-stage{display:grid;place-items:center;width:100%;padding:0;bor
 html.v2 .v2-scene-stage:focus-visible{outline:3px solid #f2d184;outline-offset:-4px}
 html.v2 .v2-scene-stage:hover .v2-scene-building,html.v2 .v2-scene-stage:focus-visible .v2-scene-building{transform:scale(1.06)}
 html.v2 .v2-scene-building{left:10%;width:80%;height:94%;transition:transform .2s}
+html.v2 .v2-stage-tooltip{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;justify-content:center;overflow:auto;padding:12px 15px;background:#10291ff2;color:#fff5d8;text-align:left;opacity:0;visibility:hidden;transition:opacity .15s,visibility .15s;pointer-events:none}
+html.v2 .v2-scene-stage:hover .v2-stage-tooltip,html.v2 .v2-scene-stage:focus .v2-stage-tooltip{opacity:1;visibility:visible}
+html.v2 .v2-stage-tooltip-title{display:block;margin-bottom:5px;color:#f8d881;font-size:15px}
+html.v2 .v2-stage-tooltip .tooltip-stat{padding:5px 0;font-size:11px}
+@media(max-width:600px){html.v2 .v2-stage-tooltip{padding:7px 9px}html.v2 .v2-stage-tooltip-title{font-size:12px}html.v2 .v2-stage-tooltip .tooltip-stat{padding:2px 0;font-size:9px}}
 @media(max-width:600px){html.v2 .v2-demo-pile{min-height:92px}html.v2 .v2-wealth-item small{font-size:8px}html.v2 .v2-wealth-shape{border-width:2px}}

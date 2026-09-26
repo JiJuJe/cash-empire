@@ -45,16 +45,16 @@
     {count:10,mult:2},{count:25,mult:2},{count:50,mult:2},{count:100,mult:3},{count:200,mult:4}
   ];
   const EARLY_PRESTIGE=[
-    ["starterCapital","Starter Capital",1,"Start every Rebirth with $250."],
-    ["quickCollectors","Quick Collectors",2,"Start every Rebirth with 5 Cash Collectors."],
-    ["clickTraining","Click Training",3,"Permanent +10% click income."],
-    ["businessNetwork","Business Network",4,"Permanent +10% business income."],
+    ["starterCapital","Starter Capital",1,"Receive $250,000 cash for this run."],
+    ["quickCollectors","Quick Collectors",2,"Receive 5 Cash Collectors for this run."],
+    ["clickTraining","Click Training",3,"+10% click income until your next Rebirth."],
+    ["businessNetwork","Business Network",4,"+10% business income until your next Rebirth."],
     ["goldenRadar","Golden Radar",5,"Golden Bills appear 10% more often."],
     ["offlineOffice","Offline Office",6,"Offline efficiency increases to 60%."],
     ["bulkBuyer","Bulk Buyer",7,"Businesses cost 3% less."],
-    ["empireMomentum","Empire Momentum",8,"Permanent +15% total earnings."],
+    ["empireMomentum","Empire Momentum",8,"+15% total earnings until your next Rebirth."],
     ["goldenReserve","Golden Reserve",9,"Golden Bill cash rewards +25%."],
-    ["rebirthMastery","Rebirth Mastery",10,"Future Rebirths give +15% Empire Points."]
+    ["rebirthMastery","Rebirth Mastery",10,"Your next Rebirth gives +15% Empire Points."]
   ].map(([id,name,cost,description])=>({id,name,cost,description,icon:"✦",image:id==="starterCapital"?"assets/ui/first-dollar.png":undefined,early:true}));
   const BOOSTERS=[
     ["coinPurse","Coin Purse","common","total",.04,"+4% total earnings"],
@@ -88,9 +88,9 @@
   const PRESTIGE = [...EARLY_PRESTIGE,
     {id:"investor",name:"Investor",icon:"📊",cost:5,description:"Businesses produce +10%."},
     {id:"compound",name:"Compound Interest",image:"assets/upgrade-compound-interest.png",cost:12,description:"Each Empire Point gives +1.5% instead of +1%."},
-    {id:"automation",name:"Automation",image:"assets/upgrade-automation.png",cost:20,description:"Start each rebirth with 10 Cash Collectors and 5 Lemonade Stands."},
+    {id:"automation",name:"Automation",image:"assets/upgrade-automation.png",cost:20,description:"Receive 10 Cash Collectors and 5 Lemonade Stands for this run."},
     {id:"lucky",name:"Lucky Investor",image:"assets/upgrade-lucky-investor.png",cost:25,description:"Golden Bills appear 30% more often."},
-    {id:"executive",name:"Executive",image:"assets/upgrade-executive.png",cost:35,description:"Permanent click income ×2."},
+    {id:"executive",name:"Executive",image:"assets/upgrade-executive.png",cost:35,description:"Click income ×2 until your next Rebirth."},
     {id:"nightshift",name:"Night Shift",image:"assets/upgrade-night-shift.png",cost:50,description:"Offline earning cap rises from 10 to 16 hours."}
   ];
   const SUFFIXES = ["","thousand","million","billion","trillion","quadrillion","quintillion","sextillion","septillion","octillion","nonillion","decillion","undecillion","duodecillion","tredecillion","quattuordecillion","quindecillion","sexdecillion","septendecillion","octodecillion","novemdecillion","vigintillion"];
@@ -478,22 +478,30 @@
       for(const b of BUSINESS){
         const owned=state.businesses[b.id],quantity=selectedQuantity(b),want=displayedQuantity(b);
         const scene=featureElement("article","v2-business-scene "+b.id+(owned?" is-owned":" is-locked"));
-        const stage=featureElement("button","v2-scene-stage");stage.type="button";stage.setAttribute("aria-label",b.name+" business stats");stage.setAttribute("aria-describedby","businessTooltip");
+        const stage=featureElement("button","v2-scene-stage");stage.type="button";stage.setAttribute("aria-label",b.name+(owned?" business stats":" price "+euro(totalCost(b,0,1))));
         const art=document.createElement("img");art.src=b.image;art.alt="";art.loading="lazy";art.decoding="async";art.className="v2-scene-building";stage.append(art);
-        stage.addEventListener("mouseenter",()=>showBusinessTooltip(b,stage));
-        stage.addEventListener("mouseleave",hideBusinessTooltip);
-        stage.addEventListener("focus",()=>showBusinessTooltip(b,stage));
-        stage.addEventListener("blur",hideBusinessTooltip);
-        stage.addEventListener("click",()=>showBusinessTooltip(b,stage));
+        const overlay=featureElement("span","v2-stage-tooltip");
+        overlay.append(featureElement("strong","v2-stage-tooltip-title",b.name));
+        if(owned){
+          const total=currentRate();
+          overlay.append(
+            tooltipRow("Owned",owned.toLocaleString("en-US")),
+            tooltipRow("One produces",euro(businessUnitRate(b),2)+"/sec"),
+            tooltipRow("All produce",euro(businessTotalRate(b),2)+"/sec"),
+            tooltipRow(cloudMode?"Earned since tracking began":"Total earned",euro(state.businessRevenue[b.id]||0)),
+            tooltipRow("Share of income",total?format(businessTotalRate(b)/total*100,1)+"%":"0%")
+          );
+        }else overlay.append(tooltipRow("Price",euro(totalCost(b,0,1))));
+        stage.append(overlay);
         const details=featureElement("div","v2-scene-details");
         details.append(featureElement("span","v2-scene-kicker",owned?"BUSINESS ACTIVE":"NEXT OPPORTUNITY"),featureElement("h3","",b.name));
         const stats=featureElement("div","v2-scene-stats");
-        stats.append(featureElement("span","","Owned "+owned.toLocaleString("en-US")));
         if(owned){
+          stats.append(featureElement("span","","Owned "+owned.toLocaleString("en-US")));
           stats.append(featureElement("span","",euro(businessUnitRate(b),b.income<10?2:0)+" / sec each"));
           stats.append(featureElement("strong","",euro(businessTotalRate(b),businessTotalRate(b)<10?2:0)+" / sec total"));
         }
-        details.append(stats);
+        if(owned)details.append(stats);
         const controls=featureElement("div","v2-scene-controls");
         const purchase=makeButton("BUY ×"+want+" · "+euro(totalCost(b,owned,want||1)),quantity===0,()=>buyBusiness(b));
         purchase.className="v2-scene-buy";
@@ -628,7 +636,8 @@
     const title=document.createElement("strong");title.textContent=b.name;
     head.append(art,title);tip.append(head);
     const owned=state.businesses[b.id],total=currentRate();
-    tip.append(
+    if(!owned)tip.append(tooltipRow("Price",euro(totalCost(b,0,1))));
+    else tip.append(
       tooltipRow("Owned",owned.toLocaleString("en-US")),
       tooltipRow("One produces",euro(businessUnitRate(b),2)+"/sec"),
       tooltipRow("All produce",euro(businessTotalRate(b),2)+"/sec"),
@@ -939,7 +948,11 @@
   function buyPrestige(p) {
     if(cloudMode){queueCloudAction({type:"buy_prestige",upgradeId:p.id});return;}
     if(hasPrestige(p.id)||pointsAvailable()<p.cost)return;
-    state.empireSpent+=p.cost;state.prestigeUpgrades.push(p.id);toast(p.name+" invested");playTone(940);afterAction();
+    state.empireSpent+=p.cost;state.prestigeUpgrades.push(p.id);
+    if(p.id==="starterCapital")state.money+=250000;
+    if(p.id==="quickCollectors"){state.businesses.collector+=5;state.businessesPurchased+=5;}
+    if(p.id==="automation"){state.businesses.collector+=10;state.businesses.lemonade+=5;state.businessesPurchased+=15;}
+    toast(p.name+" invested");playTone(940);afterAction();
   }
   function afterAction() {
     checkAchievements();renderTop();renderOwned();renderCurrent();save();
@@ -1312,6 +1325,7 @@
     state.equippedBoosters=Array.isArray(data.equippedBoosters)?data.equippedBoosters:[];
     state.boosterSlotsUnlocked=Math.max(1,Math.min(4,Number(data.boosterSlotsUnlocked)||1));
     state.premiumBoosterSlots=Array.isArray(data.premiumBoosterSlots)?data.premiumBoosterSlots:[];
+    state.nextDropPlaytimeMs=safeNumber(data.nextDropPlaytimeMs,DROP_INTERVAL_MS);
     state.pendingDropUntilMs=safeNumber(data.pendingDropUntilMs);
     state.rushUntilMs=safeNumber(data.rushUntilMs);
     buff=state.rushUntilMs>Date.now()?{type:"goldrush",mult:Math.max(7,Number(data.rushMultiplier)||7),until:state.rushUntilMs,label:(data.event?.tier||"golden").replaceAll("_"," ")+" rush"}:null;
@@ -1322,6 +1336,10 @@
     if(data.event?.type==="boosterDrop"){
       const found=BOOSTERS.find(b=>b.id===data.event.boosterId);
       if(found)toast("Booster found: "+found.name+" ("+found.rarity+")!");
+    }
+    if(data.event?.type==="rebirth"){
+      goldenExpires=0;goldenNext=Date.now()+randomBillDelay();
+      toast("Reborn with "+format(data.event.gain)+" Empire Points and $1,000,000");
     }
     if(data.event?.type==="achievementReward")toast("Achievement reward +"+euro(data.event.amount)+" · +"+format(data.event.diamonds||0)+" diamonds");
     if(data.event?.type==="freeCrateClaimed")toast("Free "+(CRATES.find(c=>c.id===data.event.crateId)?.name||"crate")+" claimed");
@@ -1570,20 +1588,15 @@
   }
   function rebirth() {
     const gain=pointsGain();if(gain<=0)return;
-    modal("Confirm Rebirth","You will gain "+format(gain)+" Empire Points. Cash, businesses, and regular upgrades reset. Achievements, lifetime earnings, Empire Points, and investments remain.",[
+    modal("Confirm Rebirth","You will gain "+format(gain)+" Empire Points and restart with $1,000,000. Lifetime earnings, businesses, upgrades, investments, diamonds and gameplay stats reset. Boosters, cosmetics, crates and paid benefits remain.",[
       {label:"Cancel",action:()=>{}},
       {label:"Rebirth",action:()=>{
         if(cloudMode){queueCloudAction({type:"rebirth"});return;}
-        const keep={lifetime:state.lifetime,diamonds:state.diamonds,achievements:state.achievements,achievementClaims:state.achievementClaims,crateInventory:state.crateInventory,freeCrateClaims:state.freeCrateClaims,rewardCosmetics:state.rewardCosmetics,cosmeticLoadout:state.cosmeticLoadout,prestigeUpgrades:state.prestigeUpgrades,
-          empireTotal:state.empireTotal+gain,empireSpent:state.empireSpent,rebirths:state.rebirths+1,
-          totalClicks:state.totalClicks,businessesPurchased:state.businessesPurchased,goldenClicked:state.goldenClicked,
-          highestRate:state.highestRate,totalPlaytime:state.totalPlaytime,businessRevenue:state.businessRevenue,settings:state.settings,
+        const keep={money:1000000,crateInventory:state.crateInventory,freeCrateClaims:state.freeCrateClaims,rewardCosmetics:state.rewardCosmetics,cosmeticLoadout:state.cosmeticLoadout,
+          empireTotal:state.empireTotal+gain,rebirths:state.rebirths+1,settings:state.settings,
           boosterInventory:state.boosterInventory,equippedBoosters:state.equippedBoosters,boosterSlotsUnlocked:state.boosterSlotsUnlocked,
-          premiumBoosterSlots:state.premiumBoosterSlots,nextDropPlaytimeMs:state.nextDropPlaytimeMs,pendingDropUntilMs:state.pendingDropUntilMs};
+          premiumBoosterSlots:state.premiumBoosterSlots};
         state=Object.assign(defaultState(),keep);
-        if(hasPrestige("starterCapital"))state.money=250;
-        if(hasPrestige("quickCollectors"))state.businesses.collector=5;
-        if(hasPrestige("automation")){state.businesses.collector=10;state.businesses.lemonade=5;}
         buff=null;goldenExpires=0;$("goldenBill").hidden=true;goldenNext=Date.now()+randomBillDelay();
         playTone(1000);toast("Reborn with "+format(gain)+" Empire Points");afterAction();
       }}

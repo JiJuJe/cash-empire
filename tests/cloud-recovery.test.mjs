@@ -78,7 +78,8 @@ test('pending click checkpoints buy upgrades and Rebirth before resetting the ru
     x.db.prepare("UPDATE progress SET run_earned=1000000,lifetime_cash=1000000,balance=1000000 WHERE user_id='u'").run();
     const rebirth={actionId:'rebirth-action-0001',type:'rebirth',clicks:[{streamId:'upgrade-stream-0001',total:101}]};
     const first=await x.post(rebirth);assert.equal(first.status,200);const after=await first.json();
-    assert.equal(after.rebirths,1);assert.equal(after.empirePoints,1);assert.equal(after.totalClicks,102);
+    assert.equal(after.rebirths,1);assert.equal(after.empirePoints,1);assert.equal(after.totalClicks,0);
+    assert.equal(after.balance,1000000);assert.equal(after.lifetimeCash,0);
     const retry=await x.post(rebirth);assert.equal(retry.status,200);assert.equal((await retry.json()).rebirths,1);
   }finally{x.db.close()}
 });
