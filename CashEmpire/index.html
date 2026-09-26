@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#11251c">
   <meta name="description" content="ClickTheCash — build a business fortune, one tap at a time.">
   <title>ClickTheCash</title>
-  <link rel="stylesheet" href="style.css?v=compact-1">
+  <link rel="stylesheet" href="style.css?v=rebirth-1">
   <script src="cloud-outbox.js?v=empire-2" defer></script>
   <script src="wealth-progression.js?v=empire-2" defer></script>
-  <script src="script.js?v=empire-2" defer></script>
+  <script src="script.js?v=rebirth-1" defer></script>
 </head>
 <body>
   <div class="game-shell">
@@ -58,7 +58,7 @@
         </div>
         <div id="tab-prestige" class="tab-panel" hidden>
           <div class="section-heading"><div><span class="eyebrow">START AGAIN. GO FURTHER.</span><h2>Rebirth</h2></div></div>
-          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS</span><strong id="pointsOwned">0</strong><p>Each Rebirth adds 10% to all earnings. Empire Points also permanently boost income and buy investments.</p><div class="rebirth-preview"><span>Points from this rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Permanent income bonus after rebirth</span><strong id="rebirthBonus">+0%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
+          <div class="rebirth-card"><div class="rebirth-icon">✦</div><span class="eyebrow">EMPIRE POINTS AVAILABLE</span><strong id="pointsOwned">0</strong><p>Every Rebirth permanently adds 10% to click and business earnings. Empire Points also boost income and buy investments.</p><div class="rebirth-preview"><span>Earned this run</span><strong id="rebirthRunEarned">$0</strong></div><div class="rebirth-preview"><span>Rebirth requirement</span><strong id="rebirthRequirement">$1,000,000</strong></div><div id="rebirthProgress" class="rebirth-progress" role="progressbar" aria-label="Progress toward Rebirth" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="rebirthProgressFill"></span></div><div class="rebirth-preview"><span>Empire Points from this Rebirth</span><strong id="pointsGain">+0</strong></div><div class="rebirth-preview"><span>Current Rebirth bonus</span><strong id="rebirthCurrentBonus">+0%</strong></div><div class="rebirth-preview"><span>After this Rebirth</span><strong id="rebirthBonus">+10%</strong></div><p id="rebirthNext" class="rebirth-next"></p><button id="rebirthButton" type="button">REBIRTH FOR EMPIRE POINTS</button></div>
           <h3 class="tree-title">Early investments · 1–10 points</h3><div id="earlyPrestigeTree" class="prestige-tree"></div><h3 class="tree-title">Advanced investments</h3><div id="prestigeTree" class="prestige-tree"></div>
         </div>
         <div id="tab-boosters" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">RARE FINDS</span><h2>Boosters</h2></div></div><p class="section-intro">Drops can appear while you actively play. Equip one copy of each booster.</p><h3 class="tree-title">Equipment · 6 slots</h3><div id="boosterSlots" class="booster-slots"></div><h3 class="tree-title">Inventory</h3><div id="boosterInventory" class="booster-inventory"></div></div>

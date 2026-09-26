@@ -164,6 +164,47 @@ test("Rebirth points are per-run, permanent multiplier is additive, and early in
   assert.equal(testing.discount(next),.97);
 });
 
+test("Rebirth requires this run's earnings and preserves permanent progress",()=>{
+  const before=progress({balance:5,runEarned:999999,lifetime:9000000,totalClicks:456,rebirths:2,
+    businesses:{...businesses,collector:10},upgrades:["wallet"],achievements:["firstClick"],
+    boosterInventory:{coinPurse:2},equipped:["coinPurse"],slotsUnlocked:2,totalPlaytimeMs:12345,
+    empirePoints:3,empireSpent:1});
+  assert.throws(()=>testing.applyAction(before,{type:"rebirth"},100000,false));
+  before.runEarned=1000000;
+  const after=testing.applyAction(before,{type:"rebirth"},100000,false);
+  assert.equal(after.rebirths,3);assert.equal(after.empirePoints,4);assert.equal(after.empireSpent,1);
+  assert.equal(after.balance,0);assert.equal(after.runEarned,0);
+  assert.equal(after.businesses.collector,0);assert.deepEqual(after.upgrades,[]);
+  assert.equal(after.lifetime,9000000);assert.equal(after.totalClicks,456);
+  assert.ok(after.achievements.includes("firstClick"));
+  assert.deepEqual(after.boosterInventory,{coinPurse:2});assert.deepEqual(after.equipped,["coinPurse"]);
+  assert.equal(after.slotsUnlocked,2);assert.equal(after.totalPlaytimeMs,12345);
+  for(const count of [0,1,2,3,10]){
+    const state=progress({rebirths:count,empirePoints:0,businesses:{...businesses,collector:1}});
+    assert.ok(Math.abs(testing.clickRate(state,false)-(1+count*.1))<1e-9);
+    assert.ok(Math.abs(testing.businessRate(state,false)-.1*(1+count*.1))<1e-9);
+  }
+});
+
+test("one-time Rebirth migration changes only Rebirth fields and concurrency version",()=>{
+  const db=new DatabaseSync(":memory:");
+  try{
+    for(const name of ["0001_leaderboard_store.sql","0002_google_accounts.sql","0003_playtime_boosters.sql","0004_cloud_click_streams.sql","0005_admin_moderation.sql","0006_store_cosmetics_bills.sql","0007_backfill_bill_claims.sql"])
+      db.exec(readFileSync(new URL("../migrations/"+name,import.meta.url),"utf8"));
+    db.prepare("INSERT INTO users(id,username,created_at_ms) VALUES('p','Player',1)").run();
+    db.prepare("INSERT INTO progress(user_id,balance,run_earned,lifetime_cash,rebirths,empire_points,empire_spent,prestige_json,businesses_json,upgrades_json,total_clicks,version,last_accrual_ms) VALUES('p',?,?,?,?,?,?,?,?,?,?,?,1)")
+      .run(4321,7654321,9999999,7,42,12,'["starterCapital"]','{"collector":17}','["wallet"]',321,5);
+    const before=db.prepare("SELECT * FROM progress WHERE user_id='p'").get();
+    db.exec(readFileSync(new URL("../migrations/0008_reset_rebirth_once.sql",import.meta.url),"utf8"));
+    const after=db.prepare("SELECT * FROM progress WHERE user_id='p'").get();
+    for(const key of Object.keys(before)){
+      if(["rebirths","empire_points","empire_spent","prestige_json","version"].includes(key))continue;
+      assert.deepEqual(after[key],before[key],key);
+    }
+    assert.deepEqual([after.rebirths,after.empire_points,after.empire_spent,after.prestige_json,after.rebirth_era,after.version],[0,0,0,"[]",1,6]);
+  }finally{db.close()}
+});
+
 test("Golden Bill cash scales and Golden Rush lasts 30 seconds for clicks and production",()=>{
   const base=progress({businesses:{...businesses,collector:100},balance:1000000,lifetime:1000000,runEarned:1000000,pendingBillTier:"golden",pendingBillUntilMs:210000});
   const cash=testing.applyAction(base,{type:"golden"},200000,false,()=>.5);

@@ -890,3 +890,6 @@ html[data-cosmetic-tap^="pink_diamond"] .particle-note{color:#ffa9e1}html[data-c
   html.fit-screen .progress-area{flex-basis:55%}
   html.fit-screen .progress-area .section-intro{display:none}
 }
+
+.rebirth-progress{height:10px;margin:6px 0 10px;border:1px solid #557c5b;border-radius:999px;background:#0d291d;overflow:hidden}
+.rebirth-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#71bb81,#e6be67);transition:width .25s ease}

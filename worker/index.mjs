@@ -59,7 +59,7 @@ function loadProgress(row){
     businessesPurchased:Math.max(Number(row.businesses_purchased)||0,Object.values(businesses).reduce((a,b)=>a+Math.max(0,Math.floor(b||0)),0)),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
-    clickStreams:decodeJson(row.click_streams_json||"{}",{}),epoch:row.progress_epoch||0,version:row.version
+    clickStreams:decodeJson(row.click_streams_json||"{}",{}),epoch:row.progress_epoch||0,rebirthEra:row.rebirth_era??0,version:row.version
   };
 }
 function normalizeExtras(s){
@@ -390,7 +390,7 @@ async function getLeaderboard(request,env,user){
 }
 function progressSummary(s,entitled){
   updateAchievements(s);
-  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,
+  return {balance:s.balance,lifetimeCash:s.lifetime,runEarned:s.runEarned,rebirths:s.rebirths,progressEpoch:s.epoch||0,rebirthEra:s.rebirthEra??0,
     ratePerSecond:businessRate(s,entitled)*(s.rushUntilMs>Date.now()?s.rushMultiplier:1),empirePoints:s.empirePoints,businessesPurchased:s.businessesPurchased,
     empireSpent:s.empireSpent,totalClicks:s.totalClicks,businesses:s.businesses,upgrades:s.upgrades,
     prestigeUpgrades:s.prestige,lastAccrualMs:s.lastAccrualMs,totalPlaytime:s.totalPlaytimeMs/1000,
@@ -428,7 +428,7 @@ function initialProgress(userId,now){
   return normalizeExtras({userId,balance:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
     pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
-    upgrades:[],prestige:[],clickStreams:{},epoch:0,version:0});
+    upgrades:[],prestige:[],clickStreams:{},epoch:0,rebirthEra:1,version:0});
 }
 async function getProgress(env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
@@ -484,12 +484,12 @@ async function applyCheckpoints(env,userId,s,checkpoints){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId","clicks","generation"],100000);
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","count","slot","boosterId","clicks","generation","rebirthEra"],100000);
   const checkpointOnly=action.type==="click_checkpoint";
   if(!checkpointOnly&&(typeof action.actionId!=="string"||!STREAM_ID.test(action.actionId)))fail(400,"Invalid action ID.");
   const allowed={click_checkpoint:["type","clicks","generation"],click_batch:["actionId","type","count","generation"],golden:["actionId","type","clicks","generation"],
     buy_business:["actionId","type","businessId","quantity","clicks","generation"],buy_upgrade:["actionId","type","upgradeId","clicks","generation"],
-    buy_prestige:["actionId","type","upgradeId","clicks","generation"],rebirth:["actionId","type","clicks","generation"],
+    buy_prestige:["actionId","type","upgradeId","clicks","generation","rebirthEra"],rebirth:["actionId","type","clicks","generation","rebirthEra"],
     unlock_slot:["actionId","type","slot","clicks","generation"],equip_booster:["actionId","type","slot","boosterId","clicks","generation"],
     unequip_booster:["actionId","type","slot","clicks","generation"],claim_booster_drop:["actionId","type","clicks","generation"]};
   if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key))||
@@ -510,6 +510,8 @@ async function postProgress(request,env,user){
     const now=Date.now(),row=await ensureProgress(env,user.id,now),current=normalizeExtras(loadProgress(row));
     current.adminEffects=await adminBoosts(env,user.id,current.lastAccrualMs);
     if((action.generation??0)!==(current.epoch||0))fail(409,"Progress was reset. Refresh cloud state.");
+    if((action.type==="rebirth"||action.type==="buy_prestige")&&(action.rebirthEra??0)!==current.rebirthEra)
+      fail(400,"Pending Rebirth action predates the one-time reset. Refresh cloud state.");
     current.premiumSlots=await premiumSlots(env,user.id);
     const checkpoint=await applyCheckpoints(env,user.id,current,action.clicks);
     if(checkpointOnly&&!checkpoint.advanced)return getProgress(env,user);

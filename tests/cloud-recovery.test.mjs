@@ -69,6 +69,20 @@ test('pending click checkpoints buy upgrades and Rebirth before resetting the ru
     const retry=await x.post(rebirth);assert.equal(retry.status,200);assert.equal((await retry.json()).rebirths,1);
   }finally{x.db.close()}
 });
+test('old queued Rebirth and prestige actions cannot replay after the one-time reset',async()=>{
+  const x=await setup();try{
+    x.db.exec(readFileSync(new URL('../migrations/0008_reset_rebirth_once.sql',import.meta.url),'utf8'));
+    x.db.prepare("UPDATE progress SET run_earned=1000000,lifetime_cash=1000000,balance=1000000 WHERE user_id='u'").run();
+    const stale=await x.post({actionId:'stale-rebirth-0001',type:'rebirth',generation:0});
+    assert.equal(stale.status,400);
+    const staleInvestment=await x.post({actionId:'stale-prestige-0001',type:'buy_prestige',upgradeId:'starterCapital',generation:0});
+    assert.equal(staleInvestment.status,400);
+    const fresh=await x.post({actionId:'fresh-rebirth-0001',type:'rebirth',rebirthEra:1,generation:0});
+    assert.equal(fresh.status,200);
+    const after=await fresh.json();assert.equal(after.rebirths,1);assert.equal(after.empirePoints,1);
+    assert.equal(x.db.prepare("SELECT COUNT(*) AS n FROM progress_actions WHERE action_id='stale-rebirth-0001'").get().n,0);
+  }finally{x.db.close()}
+});
 test('two devices keep both a purchase and independent clicks in one account run',async()=>{
   const x=await setup();try{
     const pc=await x.post({actionId:'pc-buy-business-0001',type:'buy_business',businessId:'collector',quantity:1,clicks:[{streamId:'pc-device-stream-0001',total:100}]});

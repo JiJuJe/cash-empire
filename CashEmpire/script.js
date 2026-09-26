@@ -111,7 +111,7 @@
   let cloudNameAliases=[];
   const CLOUD_FLUSH_MS=180000,CLOUD_OUTBOX_PREFIX="cash-empire-cloud-outbox-v3:",CLOUD_STREAM_PREFIX="cash-empire-click-stream-v3:",CLOUD_ACCOUNT_CACHE="cash-empire-cloud-account-v1",CLOUD_USER_ID_CACHE="cash-empire-cloud-user-id-v1";
   let cloudMode=false,pendingClicks=0,cloudQueue=Promise.resolve(),cloudBusy=false,cloudOutbox=[],cloudAdminBoosts=[];
-  let cloudClickStream={id:"",total:0,acked:0},cloudClickDue=false,cloudUnavailable=false,cloudServerBalance=0,cloudGeneration=0;
+  let cloudClickStream={id:"",total:0,acked:0},cloudClickDue=false,cloudUnavailable=false,cloudServerBalance=0,cloudGeneration=0,cloudRebirthEra=0;
   let cloudRetryTimer=0,cloudClickTimer=0,cloudRetryCount=0;
   let lastCloudSync=Date.now(),pendingAccountRefresh=false;
   const LOCAL_BACKUP="cash-empire-local-backup-v1";
@@ -636,11 +636,14 @@
     const gain=pointsGain();
     $("pointsOwned").textContent=format(pointsAvailable());
     $("pointsGain").textContent="+"+format(gain);
-    const pointRate=hasPrestige("compound")?.015:.01;
-    const after=(1+(state.rebirths+1)*.1)*(1+(state.empireTotal+gain)*pointRate);
-    $("rebirthBonus").textContent="+"+format((after-1)*100,1)+"%";
+    $("rebirthRunEarned").textContent=euro(state.runEarned);
+    $("rebirthCurrentBonus").textContent="+"+format(state.rebirths*10,0)+"%";
+    $("rebirthBonus").textContent="+"+format((state.rebirths+1)*10,0)+"%";
+    const percent=Math.min(100,Math.max(0,state.runEarned/1000000*100));
+    $("rebirthProgress").setAttribute("aria-valuenow",String(Math.round(percent)));
+    $("rebirthProgressFill").style.width=percent+"%";
     const nextTarget=Math.max(1000000,Math.ceil(Math.pow(gain+1,2)*1000000/Math.pow(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints"),2)));
-    $("rebirthNext").textContent=gain?"Rebirth now to bank your points. Next point near "+euro(nextTarget)+" this run.":"First point at $1,000,000 earned this run.";
+    $("rebirthNext").textContent=gain?"Eligible now. Next Empire Point near "+euro(nextTarget)+" earned this run.":euro(1000000-state.runEarned)+" more earned this run to unlock Rebirth.";
     $("rebirthButton").disabled=gain<=0;
     for(const [target,upgrades] of [["earlyPrestigeTree",PRESTIGE.filter(p=>p.early)],["prestigeTree",PRESTIGE.filter(p=>!p.early)]]){
       const tree=$(target);tree.replaceChildren();
@@ -982,6 +985,19 @@
     }
     if(reset){const settings=state.settings,achievements=state.achievements;state=defaultState();state.settings=settings;state.achievements=achievements;}
     cloudAdminBoosts=Array.isArray(data.adminBoosts)?data.adminBoosts:[];
+    if(Number.isSafeInteger(data.rebirthEra)&&data.rebirthEra>=0){
+      cloudRebirthEra=data.rebirthEra;
+      const retained=cloudOutbox.filter(op=>!(op.type==="rebirth"||op.type==="buy_prestige")||(op.rebirthEra??0)===cloudRebirthEra);
+      if(retained.length!==cloudOutbox.length){
+        try{
+          const serialized=JSON.stringify(retained);
+          localStorage.setItem(cloudOutboxKey(),serialized);
+          if(localStorage.getItem(cloudOutboxKey())!==serialized)throw Error("Queue verification failed.");
+          cloudOutbox=retained;
+          toast("Old pending Rebirth actions were retired. Other queued progress was kept.");
+        }catch(_){cloudUnavailable=true;renderCloudStatus();}
+      }
+    }
     cloudServerBalance=safeNumber(data.balance);
     state.money=cloudServerBalance;
     state.lifetime=safeNumber(data.lifetimeCash);
@@ -1149,7 +1165,7 @@
     if(!stagePendingClicks())return cloudQueue;
     clearTimeout(cloudClickTimer);cloudClickTimer=0;
     if(action){
-      cloudOutbox.push({actionId:crypto.randomUUID(),...action,clickTotal:cloudClickStream.total});
+      cloudOutbox.push({actionId:crypto.randomUUID(),...action,...(action.type==="rebirth"||action.type==="buy_prestige"?{rebirthEra:cloudRebirthEra}:{}),clickTotal:cloudClickStream.total});
       if(!persistCloudOutbox())return cloudQueue;
     }else cloudClickDue=true;
     return startCloudDrain();
