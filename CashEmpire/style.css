@@ -716,3 +716,177 @@ html[data-cosmetic-tap^="pink_diamond"] .particle-note{color:#ffa9e1}html[data-c
 
 @media(min-width:1101px) and (max-width:1500px){.play-header .music-label{display:none}.play-header .music-controls input{width:46px}}
 @media(max-width:600px) and (orientation:portrait) and (max-height:700px){html.fit-screen .columns{grid-template-rows:minmax(0,44%) minmax(0,30%) minmax(0,26%)}}
+
+/* Denser layout: spend the viewport on game content, without shrinking the whole UI. */
+.play-column{padding:16px 17px 12px}
+.balance-card{padding:12px 0 4px}
+.play-footer{padding-top:7px;margin-top:4px}
+.eyebrow,.brand-kicker{font-size:9px;letter-spacing:.12em}
+.progress-area{height:clamp(205px,31vh,290px)}
+.progress-area .tabs,.store-top{height:50px;min-height:50px}
+.progress-area .tabs{gap:4px;padding-inline:10px}
+.progress-area .tab{font-size:clamp(10px,.7vw,11px);letter-spacing:.025em;padding:0 7px;min-height:46px}
+.progress-area .tab-panel{padding:11px 14px 13px}
+.section-heading h2,.store-top h2{font-size:24px;margin-top:1px}
+.progress-area .section-heading h2{font-size:20px}
+.section-intro,.progress-area .section-intro{margin:5px 0 10px;font-size:12px;line-height:1.35}
+.section-count{font-size:10px}
+.upgrade-list,.prestige-tree{gap:6px}
+.upgrade-card,.investment-card,.progress-area .upgrade-card{gap:8px;padding:7px 9px;border-radius:8px;box-shadow:0 2px 0 #0a1c14}
+.upgrade-icon{width:36px;height:36px;font-size:20px}
+.upgrade-icon img{width:34px;height:34px}
+.upgrade-info strong{font-size:12px}
+.upgrade-info p,.investment-card .upgrade-info p{margin-top:2px;line-height:1.25}
+.upgrade-card button,.investment-card button,.business-card button,.rebirth-card button{padding:8px 10px}
+.world-panel{padding:8px 12px 6px}
+.world-panel .owned-heading{min-height:48px;padding:3px 4px 6px;align-items:center}
+.world-panel .owned-heading h2{font-size:17px;margin-top:1px}
+.world-panel .owned-total{font-size:11px}
+.world-panel .owned-business-list{padding:6px 2px 8px}
+.world-panel .owned-row{min-height:78px;margin-bottom:6px;padding:6px 8px;border-radius:9px;box-shadow:0 3px 7px #061a1238}
+.world-panel .owned-row-head{gap:6px;margin-bottom:4px}
+.world-panel .owned-row-head>img{width:30px;height:30px}
+.world-panel .owned-row-head .owned-row-title strong{font-size:12px}
+.owned-row-title small{font-size:10px;line-height:1.2}
+.world-panel .owned-row-head .owned-quantity{font-size:13px}
+.world-panel .owned-copies{gap:3px;min-height:29px}
+.world-panel .owned-copy{width:31px;height:31px}
+.world-panel .owned-row.medium .owned-copy{width:27px;height:27px}
+.world-panel .owned-row.dense .owned-copy{width:23px;height:23px}
+.world-panel .world-starter{min-height:0;padding:11px}
+.world-starter h3{font-size:16px;margin:6px 0 4px}
+.world-starter p{margin-bottom:8px;line-height:1.3}
+.starter-previews{gap:5px}
+.starter-preview{min-height:67px;padding:3px}
+.starter-preview img{width:40px;height:40px}
+.world-next{min-height:54px;padding:5px 8px;gap:8px}
+.world-next img{width:42px;height:42px}
+.store-top{padding:8px 15px}
+.store-top h2{font-size:23px}
+.store-badge{padding:4px;font-size:8px}
+.buy-row{min-height:39px;padding:5px 13px}
+.buy-option{padding:5px 8px}
+.business-list{padding:7px 9px 12px}
+.business-card{min-height:67px;padding:6px 8px;margin-bottom:5px;gap:8px;border-radius:8px}
+.business-image,.business-image img{width:48px;height:48px}
+.business-info strong{font-size:13px}
+.business-info p{margin-top:2px;line-height:1.2}
+.business-owned{margin-top:2px}
+.business-card button{min-width:70px}
+.business-card button small{margin-top:1px}
+.stats-grid,.achievement-grid{gap:6px;margin-top:10px}
+.stat{min-height:62px;padding:9px 11px}
+.stat strong{margin-top:4px;font-size:15px}
+.achievement{min-height:86px;padding:8px}
+.achievement-icon{width:32px;height:32px;margin-bottom:4px;font-size:17px}
+.achievement p{margin:2px 0;line-height:1.25}
+.settings-card,.save-card,.rebirth-card{margin-top:12px;padding:12px}
+.settings-card h3,.save-card h3{font-size:15px;margin-bottom:8px}
+.settings-list{gap:6px}
+.setting{padding:8px}
+.save-card p,.rebirth-card p{line-height:1.35}
+.rebirth-icon{font-size:30px}
+.rebirth-card>strong{font-size:36px}
+.rebirth-preview{padding:7px 0}
+.rebirth-card button{margin-top:6px;padding:10px}
+.tree-title{margin:14px 0 7px;font-size:14px}
+.booster-slots{gap:5px;margin:6px 0 9px}
+.booster-slot{min-height:42px;padding:5px}
+.booster-inventory{gap:5px;padding-bottom:8px}
+.booster-card{gap:7px;padding:6px}
+.booster-art{width:30px;height:30px;font-size:19px}
+.modal{padding:17px;max-height:92dvh}
+.modal h2{font-size:21px;margin:4px 0 8px}
+.modal p{font-size:13px;line-height:1.4}
+.modal-actions{margin-top:11px}
+.feature-body{padding:16px}
+.feature-header{margin-bottom:9px;gap:8px}
+.feature-header h2{font-size:21px;margin-top:2px}
+.feature-message{padding:12px}
+.leaderboard-row{padding:7px 9px;gap:6px}
+.leaderboard-view .leaderboard-row{min-height:36px}
+.personal-rank{margin-top:7px;padding-top:7px}
+.store-category{margin:11px 0 6px}
+.product-grid{gap:6px}
+.product-card{padding:7px;gap:7px}
+.product-card .premium-icon{width:36px;height:36px;font-size:21px}
+.product-card .premium-info p{line-height:1.25}
+.premium-note{margin-top:7px}
+.cosmetics-list{gap:7px}
+.cosmetic-group{padding:7px}
+.cosmetic-group h3{margin-bottom:5px}
+
+@media(max-width:800px){
+  .progress-area .tabs,.world-panel .owned-heading{min-height:44px;height:44px}
+  .progress-area .tab{min-height:40px}
+  .play-column,.content-column{min-height:0}
+}
+@media(max-width:600px){
+  .market-ticker{height:44px;min-height:44px}
+  .play-column{padding:8px 10px 6px}
+  .balance-card{padding:5px 0 2px}
+  .balance{font-size:clamp(31px,8.3vw,42px)}
+  .income-line{font-size:clamp(11px,2.9vw,13px)}
+  .play-column .pile-zone{height:190px;min-height:190px}
+  .play-column .money-pile{width:min(66vw,210px)}
+  html:not(.fit-screen) .progress-area{height:auto;min-height:115px;max-height:220px}
+  .progress-area .tabs{height:42px;min-height:42px;gap:3px;padding-inline:6px}
+  .progress-area .tab{min-height:40px;font-size:clamp(10px,2.6vw,11px);padding:0 6px}
+  .progress-area .tab-panel{padding:7px 9px 9px}
+  .progress-area .section-heading h2{font-size:18px}
+  .progress-area .section-intro{font-size:11px;margin:3px 0 7px}
+  .progress-area .upgrade-card{padding:6px 7px}
+  html:not(.fit-screen) .world-panel{height:clamp(190px,24vh,250px);min-height:clamp(190px,24vh,250px)}
+  .world-panel{padding:5px 9px}
+  .world-panel .owned-heading{height:39px;min-height:39px;padding:0 3px 4px}
+  .world-panel .owned-heading h2{font-size:16px}
+  .world-panel .owned-row{min-height:72px;padding:5px 7px;margin-bottom:5px}
+  .world-panel .owned-row-head>img{width:27px;height:27px}
+  .world-panel .owned-copy{width:28px;height:28px}
+  .store-top{height:auto;min-height:45px;padding:6px 11px}
+  .store-top h2{font-size:20px}
+  .buy-row{padding:4px 9px;min-height:40px}
+  .buy-option{min-height:40px;padding:4px 6px;font-size:11px}
+  .business-list{padding:5px 7px 10px}
+  .business-card{min-height:64px;padding:5px 6px;margin-bottom:5px;gap:6px}
+  .business-image,.business-image img{width:40px;height:40px}
+  .business-info strong{font-size:clamp(12px,3.2vw,14px)}
+  .business-info p,.owned-row-title small{font-size:clamp(10px,2.7vw,12px)}
+  .business-card button{min-height:42px;min-width:68px;padding:5px;font-size:11px}
+  .feature-body,.leaderboard-view .feature-body{padding:11px 9px}
+  .feature-header h2{font-size:19px}
+  .leaderboard-view .leaderboard-row{min-height:36px;padding:5px 4px}
+  .product-card{grid-template-columns:36px minmax(0,1fr) auto;gap:7px}
+  .product-card .premium-icon{width:34px;height:34px}
+  .product-card .premium-buy{grid-column:3;min-height:40px;width:auto;padding:6px 9px}
+  .product-card .premium-note{grid-column:2 / -1}
+  .cosmetic-option button{min-height:38px}
+}
+@media(max-width:900px){
+  html.fit-screen .market-ticker{height:36px;min-height:36px}
+  html.fit-screen .progress-area{flex-basis:49%}
+  html.fit-screen .progress-area .tabs{height:39px;min-height:39px;gap:4px;padding-inline:6px}
+  html.fit-screen .progress-area .tab{min-height:37px;padding-inline:6px;font-size:10px}
+  html.fit-screen .progress-area .tab-panel{padding:6px 8px}
+  html.fit-screen .world-panel .owned-heading{height:35px;min-height:35px;padding:0 3px}
+  html.fit-screen .world-panel .owned-row{min-height:61px;margin-bottom:4px;padding:4px 6px}
+  html.fit-screen .world-panel .owned-row-head>img{width:25px;height:25px}
+  html.fit-screen .world-panel .owned-copies{min-height:25px}
+  html.fit-screen .world-panel .owned-copy{width:25px;height:25px}
+  html.fit-screen .store-top{height:38px;min-height:38px;padding:4px 9px}
+  html.fit-screen .store-top h2{font-size:17px}
+  html.fit-screen .buy-row{min-height:35px;padding:3px 8px}
+  html.fit-screen .buy-option{min-height:34px;padding:3px 6px}
+  html.fit-screen .business-list{padding:4px 7px 8px}
+  html.fit-screen .business-card{min-height:52px;margin-bottom:4px;padding:4px 5px}
+  html.fit-screen .business-image,html.fit-screen .business-image img{width:36px;height:36px}
+  html.fit-screen .business-card button{min-height:40px;min-width:65px}
+}
+@media(max-width:600px) and (orientation:portrait){
+  html.fit-screen .columns{grid-template-rows:minmax(0,38%) minmax(0,29%) minmax(0,33%)}
+}
+@media(max-width:600px) and (orientation:portrait) and (max-height:700px){
+  html.fit-screen .columns{grid-template-rows:minmax(0,40%) minmax(0,30%) minmax(0,30%)}
+  html.fit-screen .progress-area{flex-basis:55%}
+  html.fit-screen .progress-area .section-intro{display:none}
+}
