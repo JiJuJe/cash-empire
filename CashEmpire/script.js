@@ -1518,7 +1518,7 @@
   }
   function migratePreResetSave(raw) {
     if(raw.globalResetVersion>=3)return raw;
-    const played=Number(raw.money)>0||Number(raw.lifetime)>0||Number(raw.runEarned)>0||Number(raw.totalClicks)>0||Number(raw.totalPlaytime)>0||Number(raw.rebirths)>0||Object.values(raw.businesses||{}).some(n=>Number(n)>0);
+    const played=Number(raw.money)>0||Number(raw.lifetime)>0||Number(raw.runEarned)>0||Number(raw.totalClicks)>0||Number(raw.totalPlaytime)>0||Number(raw.rebirths)>0||Number(raw.businessesPurchased)>0||Object.values(raw.businesses||{}).some(n=>Number(n)>0);
     return {...defaultState(),globalResetVersion:3,money:played?1000000:0,
       boosterInventory:raw.boosterInventory,equippedBoosters:raw.equippedBoosters,
       boosterSlotsUnlocked:raw.boosterSlotsUnlocked,premiumBoosterSlots:raw.premiumBoosterSlots,
