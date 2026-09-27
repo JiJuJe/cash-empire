@@ -29,9 +29,9 @@
   homeButton.type = "button";
   homeButton.dataset.tab = "home";
   tabs.prepend(homeButton);
-  const order = ["home", "upgrades", "prestige", "boosters", "crates", "achievements", "leaderboard", "chat", "store", "stats", "cosmetics"];
+  const order = ["home", "upgrades", "prestige", "boosters", "crates", "daily", "weekly", "achievements", "leaderboard", "store", "stats", "cosmetics"];
   const labels = {prestige:"REBIRTH"};
-  const icons = {home:"⌂",upgrades:"✦",prestige:"↗",boosters:"◆",crates:"▣",achievements:"★",leaderboard:"▥",chat:"▤",store:"▣",stats:"◫",cosmetics:"◈"};
+  const icons = {home:"⌂",upgrades:"✦",prestige:"↗",boosters:"◆",crates:"▣",daily:"◷",weekly:"▤",achievements:"★",leaderboard:"▥",store:"▣",stats:"◫",cosmetics:"◈"};
   for (const key of order) {
     const button = key === "home" ? homeButton : tabs.querySelector(`[data-tab="${key}"], [data-feature="${key}"]`);
     if (!button) continue;
@@ -57,7 +57,7 @@
   const center = node("div", "v2-home-center");
   const right = node("aside", "v2-right");
   right.setAttribute("aria-label", "Active boosters and events");
-  right.append(node("div", "v2-status-panel v2-boost-panel"), node("div", "v2-status-panel v2-event-panel"));
+  right.append(node("div", "v2-status-panel v2-boost-panel"), node("div", "v2-status-panel v2-event-panel"),document.getElementById("chatDock"));
   center.append(play, world);
   home.append(center, right);
   main.append(home, page);

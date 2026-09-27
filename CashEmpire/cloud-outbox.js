@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
   const ID=/^[A-Za-z0-9_-]{12,80}$/;
-  const ACTIONS=new Set(["golden","buy_business","buy_upgrade","buy_prestige","rebirth","unlock_slot","equip_booster","unequip_booster","claim_booster_drop","claim_achievement","buy_crate","open_crate","claim_free_crate"]);
+  const ACTIONS=new Set(["golden","buy_business","buy_upgrade","buy_prestige","rebirth","unlock_slot","equip_booster","unequip_booster","claim_booster_drop","claim_achievement","buy_crate","open_crate","claim_free_crate","claim_quest"]);
   const MAX_LEGACY=1000;
   function compactLegacy(actions){
     if(!Array.isArray(actions))throw Error("Cloud queue is not an array.");

@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  const panel=document.getElementById("tab-chat");
+  const panel=document.getElementById("chatDock");
   const list=document.getElementById("chatMessages");
   const form=document.getElementById("chatForm");
   const input=document.getElementById("chatInput");
@@ -8,7 +8,7 @@
   const status=document.getElementById("chatStatus");
   if(!panel||!list||!form||!input||!send||!status)return;
   let busy=false,lastSent=0,lastSignature="",loading=false;
-  const visible=()=>!panel.hidden&&!document.hidden;
+  const visible=()=>!document.getElementById("v2Home").hidden&&!document.hidden;
   const signedIn=()=>!document.getElementById("accountButton").hidden;
   function updateControls(){
     const wait=Math.max(0,3000-(Date.now()-lastSent));
@@ -57,7 +57,7 @@
     }catch(error){status.textContent=error.message||"Could not send message.";}
     finally{busy=false;updateControls();}
   });
-  document.querySelector('[data-tab="chat"]')?.addEventListener("click",()=>{updateControls();refresh();});
+  document.querySelector('[data-tab="home"]')?.addEventListener("click",()=>{updateControls();refresh();});
   document.addEventListener("visibilitychange",()=>{if(visible())refresh();});
   setInterval(()=>{updateControls();refresh();},8000);
   setInterval(updateControls,250);

@@ -3,6 +3,7 @@ import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationM
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID,COSMETIC_SLOTS,publicCatalog} from "./store-catalog.mjs";
 import {achievementReward,achievementDiamondReward,CRATE_BY_ID,freeCratePeriod,freeCrateStatus,publicCrates,rollCrate} from "./rewards.mjs";
+import {normalizeQuestState,applyQuestDelta,questSummary,claimQuest} from "./quests.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -62,7 +63,7 @@ function loadProgress(row){
     businessesPurchased:Math.max(Number(row.businesses_purchased)||0,Object.values(businesses).reduce((a,b)=>a+Math.max(0,Math.floor(b||0)),0)),
     lastAccrualMs:row.last_accrual_ms,lastGoldenMs:row.last_golden_ms||0,businesses:BUSINESS.reduce((a,b)=>(a[b.id]=Math.max(0,Math.floor(businesses[b.id]||0)),a),{}),
     upgrades:Array.isArray(upgrades)?upgrades:[],prestige:Array.isArray(prestige)?prestige:[],
-    clickStreams:decodeJson(row.click_streams_json||"{}",{}),epoch:row.progress_epoch||0,rebirthEra:row.rebirth_era??0,version:row.version
+    clickStreams:decodeJson(row.click_streams_json||"{}",{}),questDaily:decodeJson(row.quest_daily_json||"{}",{}),questWeekly:decodeJson(row.quest_weekly_json||"{}",{}),epoch:row.progress_epoch||0,rebirthEra:row.rebirth_era??0,version:row.version
   };
 }
 function normalizeExtras(s){
@@ -89,6 +90,8 @@ function normalizeExtras(s){
   s.equipped=Array.isArray(s.equipped)?s.equipped.slice(0,6):[];
   s.premiumSlots=Array.isArray(s.premiumSlots)?s.premiumSlots:[];
   s.clickStreams=s.clickStreams&&typeof s.clickStreams==="object"&&!Array.isArray(s.clickStreams)?s.clickStreams:{};
+  s.questDaily=s.questDaily&&typeof s.questDaily==="object"&&!Array.isArray(s.questDaily)?s.questDaily:{};
+  s.questWeekly=s.questWeekly&&typeof s.questWeekly==="object"&&!Array.isArray(s.questWeekly)?s.questWeekly:{};
   s.adminEffects=Array.isArray(s.adminEffects)?s.adminEffects:[];
   return s;
 }
@@ -220,8 +223,12 @@ function updateAchievements(s){
 const CLICK_BATCH_TECHNICAL_MAX=1000;
 function applyAction(current,action,now,entitled,random=Math.random,checkpointClicks=0){
   const s=normalizeExtras(structuredClone(current));
+  s.questDaily=normalizeQuestState(s.questDaily,"daily",now);
+  s.questWeekly=normalizeQuestState(s.questWeekly,"weekly",now);
   advance(s,now,entitled);
   if(checkpointClicks){award(s,clickRate(s,entitled,now)*checkpointClicks*(s.rushUntilMs>now?s.rushMultiplier:1));s.totalClicks+=checkpointClicks;}
+  if(checkpointClicks)applyQuestDelta({daily:s.questDaily,weekly:s.questWeekly},now,{clicks:checkpointClicks});
+  const before={clicks:s.totalClicks,businesses:s.businessesPurchased,upgrades:s.upgrades.length};
   updateAchievements(s);
   if(action.type==="click_checkpoint"){
     // The cumulative stream receipt lives in this same progress row.
@@ -310,6 +317,14 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
       }else s.rewardCosmetics.push(reward.id);
     }else if(reward.kind==="crate")s.crateInventory[reward.id]=(Number(s.crateInventory[reward.id])||0)+1;
     s.event={type:"crateOpened",crateId:crate.id,reward};
+  }else if(action.type==="claim_quest"){
+    const holder={daily:s.questDaily,weekly:s.questWeekly};
+    const reward=claimQuest(holder,action.period,action.questId,now,prize=>{
+      award(s,prize.cash);s.diamonds=Math.min(1000000000,s.diamonds+prize.diamonds);
+      for(const [id,count] of Object.entries(prize.crates))s.crateInventory[id]=(Number(s.crateInventory[id])||0)+count;
+    });
+    s.questDaily=holder.daily;s.questWeekly=holder.weekly;
+    s.event={type:"questClaimed",period:action.period,questId:action.questId,reward};
   }else if(action.type==="rebirth"){
     const gain=rebirthPoints(s);
     if(gain<1)throw Error("Rebirth unavailable.");
@@ -319,6 +334,10 @@ function applyAction(current,action,now,entitled,random=Math.random,checkpointCl
     if(s.prestige.includes("quickCollectors"))s.businesses.collector=5;
     if(s.prestige.includes("automation")){s.businesses.collector=10;s.businesses.lemonade=5;}
   }else throw Error("Unknown progress action.");
+  applyQuestDelta({daily:s.questDaily,weekly:s.questWeekly},now,{
+    clicks:Math.max(0,s.totalClicks-before.clicks),businesses:Math.max(0,s.businessesPurchased-before.businesses),
+    upgrades:Math.max(0,s.upgrades.length-before.upgrades),golden:action.type==="golden"?1:0,crates:action.type==="open_crate"?1:0
+  });
   if(!Number.isFinite(s.balance)||!Number.isFinite(s.lifetime))throw Error("Invalid progress.");
   s.highestRate=Math.max(s.highestRate,businessRate(s,entitled,now));
   updateAchievements(s);
@@ -483,7 +502,7 @@ function progressSummary(s,entitled){
     pendingBillTier:s.pendingBillUntilMs>Date.now()?s.pendingBillTier:null,pendingBillUntilMs:s.pendingBillUntilMs,
     billClaims:s.billClaims,achievements:s.achievements,achievementClaims:s.achievementClaims,
     crateInventory:s.crateInventory,freeCrateClaims:s.freeCrateClaims,freeCrateStatus:freeCrateStatus(s.freeCrateClaims,Date.now()),rewardCosmetics:s.rewardCosmetics,businessRevenue:s.businessRevenue,highestRate:s.highestRate,
-    rushUntilMs:s.rushUntilMs,rushMultiplier:s.rushMultiplier,event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
+    rushUntilMs:s.rushUntilMs,rushMultiplier:s.rushMultiplier,quests:questSummary({daily:s.questDaily,weekly:s.questWeekly},Date.now()),event:s.event||null,adminBoosts:(s.adminEffects||[]).filter(b=>!b.removed_at_ms&&(b.expires_at_ms===null||b.expires_at_ms>Date.now())).map(b=>({kind:b.kind,multiplier:b.multiplier,expiresAtMs:b.expires_at_ms}))};
 }
 function updateStatement(env,s,oldVersion,entitled){
   updateAchievements(s);
@@ -494,14 +513,14 @@ function updateStatement(env,s,oldVersion,entitled){
     booster_inventory_json=?,booster_equipped_json=?,booster_slots_unlocked=?,next_drop_playtime_ms=?,
     pending_drop_until_ms=?,rush_until_ms=?,offline_efficiency=?,click_streams_json=?,
     pending_bill_tier=?,pending_bill_until_ms=?,bill_claims_json=?,rush_multiplier=?,achievements_json=?,achievement_claims_json=?,crate_inventory_json=?,free_crate_claims_json=?,reward_cosmetics_json=?,business_revenue_json=?,highest_rate=?,businesses_purchased=?,
-    version=version+1 WHERE user_id=? AND version=?`).bind(
+    quest_daily_json=?,quest_weekly_json=?,version=version+1 WHERE user_id=? AND version=?`).bind(
       s.balance,s.diamonds,s.lifetime,s.runEarned,s.rebirths,s.empirePoints,s.empireSpent,
       s.totalClicks,s.lastAccrualMs,s.lastGoldenMs,rate,cap,
       JSON.stringify(s.businesses),JSON.stringify(s.upgrades),JSON.stringify(s.prestige),
       s.totalPlaytimeMs,s.lastHeartbeatMs,JSON.stringify(s.boosterInventory),JSON.stringify(s.equipped),
       s.slotsUnlocked,s.nextDropPlaytimeMs,s.pendingDropUntilMs,s.rushUntilMs,
       (s.prestige.includes("offlineOffice")?.6:.5)*(1+bonus(s,"offline")),JSON.stringify(s.clickStreams),
-      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.freeCrateClaims),JSON.stringify(s.rewardCosmetics),JSON.stringify(s.businessRevenue),s.highestRate,s.businessesPurchased,
+      s.pendingBillTier,s.pendingBillUntilMs,JSON.stringify(s.billClaims),s.rushMultiplier,JSON.stringify(s.achievements),JSON.stringify(s.achievementClaims),JSON.stringify(s.crateInventory),JSON.stringify(s.freeCrateClaims),JSON.stringify(s.rewardCosmetics),JSON.stringify(s.businessRevenue),s.highestRate,s.businessesPurchased,JSON.stringify(s.questDaily),JSON.stringify(s.questWeekly),
       s.userId,oldVersion
     );
 }
@@ -515,7 +534,7 @@ function initialProgress(userId,now){
   return normalizeExtras({userId,balance:0,diamonds:0,lifetime:0,runEarned:0,rebirths:0,empirePoints:0,empireSpent:0,totalClicks:0,businessRevenue:{},
     totalPlaytimeMs:0,lastHeartbeatMs:0,boosterInventory:{},equipped:[],slotsUnlocked:1,nextDropPlaytimeMs:DROP_INTERVAL_MS,
     pendingDropUntilMs:0,rushUntilMs:0,rushMultiplier:7,pendingBillTier:null,pendingBillUntilMs:0,billClaims:{},achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},rewardCosmetics:[],highestRate:0,businessesPurchased:0,lastAccrualMs:now,lastGoldenMs:0,businesses:Object.fromEntries(BUSINESS.map(b=>[b.id,0])),
-    upgrades:[],prestige:[],clickStreams:{},epoch:0,rebirthEra:1,version:0});
+    upgrades:[],prestige:[],clickStreams:{},questDaily:{},questWeekly:{},epoch:0,rebirthEra:1,version:0});
 }
 async function getProgress(env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
@@ -571,7 +590,7 @@ async function applyCheckpoints(env,userId,s,checkpoints){
 async function postProgress(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
   sameOrigin(request);
-  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","achievementId","crateId","count","slot","boosterId","clicks","generation","rebirthEra"],100000);
+  const action=await readBody(request,["actionId","type","businessId","quantity","upgradeId","achievementId","crateId","count","slot","boosterId","clicks","generation","rebirthEra","period","questId"],100000);
   const checkpointOnly=action.type==="click_checkpoint";
   if(!checkpointOnly&&(typeof action.actionId!=="string"||!STREAM_ID.test(action.actionId)))fail(400,"Invalid action ID.");
   const allowed={click_checkpoint:["type","clicks","generation"],click_batch:["actionId","type","count","generation"],golden:["actionId","type","clicks","generation"],
@@ -580,7 +599,8 @@ async function postProgress(request,env,user){
     unlock_slot:["actionId","type","slot","clicks","generation"],equip_booster:["actionId","type","slot","boosterId","clicks","generation"],
     unequip_booster:["actionId","type","slot","clicks","generation"],claim_booster_drop:["actionId","type","clicks","generation"],
     claim_achievement:["actionId","type","achievementId","clicks","generation"],buy_crate:["actionId","type","crateId","clicks","generation"],
-    open_crate:["actionId","type","crateId","clicks","generation"],claim_free_crate:["actionId","type","crateId","clicks","generation"]};
+    open_crate:["actionId","type","crateId","clicks","generation"],claim_free_crate:["actionId","type","crateId","clicks","generation"],
+    claim_quest:["actionId","type","period","questId","clicks","generation"]};
   if(!Object.hasOwn(allowed,action.type)||Object.keys(action).some(key=>!allowed[action.type].includes(key))||
     (checkpointOnly&&!action.clicks))fail(400,"Invalid action.");
   const bucket=checkpointOnly||action.type==="click_batch"?"progress-click:"+user.id:
@@ -632,7 +652,9 @@ async function postHeartbeat(request,env,user){
   for(let attempt=0;attempt<3;attempt++){
     const now=Date.now(),row=await ensureProgress(env,user.id,now);
     const s=normalizeExtras(loadProgress(row));s.adminEffects=await adminBoosts(env,user.id,s.lastAccrualMs);s.premiumSlots=await premiumSlots(env,user.id);
-    advance(s,now,entitled);heartbeatState(s,now,body.active);
+    advance(s,now,entitled);const previousPlaytime=s.totalPlaytimeMs;heartbeatState(s,now,body.active);
+    s.questDaily=normalizeQuestState(s.questDaily,"daily",now);s.questWeekly=normalizeQuestState(s.questWeekly,"weekly",now);
+    applyQuestDelta({daily:s.questDaily,weekly:s.questWeekly},now,{playtimeMs:Math.max(0,s.totalPlaytimeMs-previousPlaytime)});
     const updated=await updateStatement(env,s,s.version,entitled).run();
     if(updated.meta?.changes===1)return json(progressSummary(s,entitled));
   }

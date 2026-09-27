@@ -4,6 +4,14 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const queue=require('../CashEmpire/cloud-outbox.js');
 const id=n=>'old-click-'+String(n).padStart(6,'0');
+test('quest claims survive browser outbox recovery with pending clicks',()=>{
+  const action={actionId:'quest-claim-000001',type:'claim_quest',period:'daily',questId:'daily_tap_25',clickTotal:25};
+  const recovered=queue.mergeQueues([], [action]);
+  const next=queue.planNext(recovered,{id:'device-stream-0001',total:25,acked:0});
+  assert.equal(next.request.type,'claim_quest');
+  assert.equal(next.request.questId,'daily_tap_25');
+  assert.equal(next.request.clicks[0].total,25);
+});
 function storage(initial={},failKey=''){
   const values=new Map(Object.entries(initial));
   return {values,getItem:key=>values.has(key)?values.get(key):null,setItem(key,value){if(key===failKey)throw Error('Storage full');values.set(key,String(value));},removeItem:key=>values.delete(key)};

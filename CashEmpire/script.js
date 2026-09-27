@@ -100,7 +100,7 @@
     version:1,globalResetVersion:3,money:0,diamonds:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
-    upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},freeCrateStatus:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],
+    upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},freeCrateStatus:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],quests:null,
     empireTotal:0,empireSpent:0,rebirths:0,
     totalClicks:0,businessesPurchased:0,goldenClicked:0,
     highestRate:0,totalPlaytime:0,lastPlayed:Date.now(),
@@ -969,6 +969,36 @@
       button.disabled=selectedQuantity(b)===0;
     }
   }
+  function renderQuests(kind){
+    const data=state.quests?.[kind],list=$(kind+"QuestList"),completion=$(kind+"QuestCompletion");
+    list.replaceChildren();completion.replaceChildren();
+    if(!cloudMode||!account.authenticated){list.append(featureElement("p","quest-notice","Sign in with Google to track and claim verified tasks."));return;}
+    if(!data){list.append(featureElement("p","quest-notice","Loading your tasks..."));return;}
+    $(kind+"QuestCount").textContent=data.quests.filter(q=>q.claimed).length+" / "+data.quests.length+" claimed";
+    $(kind+"QuestReset").textContent="Resets "+new Date(data.endsAtMs).toLocaleString()+" · progress counts during this "+(kind==="daily"?"day":"week")+".";
+    const progressText=(value,metric)=>metric==="playtimeMs"?Math.floor(value/60000)+" min":format(value);
+    for(const quest of data.quests){
+      const card=featureElement("article","quest-card"+(quest.claimed?" claimed":""));
+      const top=featureElement("div","quest-card-top");
+      top.append(featureElement("span","quest-difficulty",quest.difficulty),featureElement("span","quest-reward","+"+quest.diamonds+" diamonds · "+euro(quest.cash)));
+      card.append(top,featureElement("h3","",quest.title),featureElement("p","",quest.description));
+      const progress=featureElement("div","quest-progress");
+      const fill=featureElement("span","");fill.style.width=Math.min(100,100*quest.progress/quest.target)+"%";progress.append(fill);
+      card.append(progress);
+      const foot=featureElement("div","quest-card-foot");
+      foot.append(featureElement("span","",progressText(quest.progress,quest.metric)+" / "+progressText(quest.target,quest.metric)));
+      const button=makeButton(quest.claimed?"Claimed":quest.progress>=quest.target?"Claim reward":"In progress",quest.claimed||quest.progress<quest.target,()=>{
+        button.disabled=true;queueCloudAction({type:"claim_quest",period:kind,questId:quest.id});
+      });
+      foot.append(button);card.append(foot);list.append(card);
+    }
+    completion.append(featureElement("h3","","Complete every "+kind+" task"));
+    completion.append(featureElement("p","",kind==="daily"?"Grand reward: Wood Crate, 40 diamonds and $250,000.":"Grand reward: Royal Crate, Wood Crate, 150 diamonds and $2,000,000."));
+    const done=makeButton(data.completionClaimed?"Grand reward claimed":data.completionReady?"Claim grand reward":"Claim all tasks to unlock",data.completionClaimed||!data.completionReady,()=>{
+      done.disabled=true;queueCloudAction({type:"claim_quest",period:kind,questId:"completion"});
+    });
+    completion.append(done);
+  }
   function renderCurrent() {
     if(activeTab==="home")updateV2SceneControls();
     else if(activeTab==="upgrades")renderUpgrades();
@@ -976,6 +1006,7 @@
     else if(activeTab==="achievements")renderAchievements();
     else if(activeTab==="boosters")renderBoosters();
     else if(activeTab==="crates")renderCrates();
+    else if(activeTab==="daily"||activeTab==="weekly")renderQuests(activeTab);
     else if(activeTab==="cosmetics")renderCosmetics();
     else if(activeTab==="prestige")renderPrestige();
     renderBusinesses();
@@ -993,6 +1024,10 @@
     document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
     document.querySelectorAll(".tab-panel").forEach(p=>{const on=p.id==="tab-"+tab;p.hidden=!on;p.classList.toggle("active",on);});
     renderCurrent();
+    if((tab==="daily"||tab==="weekly")&&cloudMode&&account.authenticated){
+      if(pendingClicks>0||cloudClickStream.total>cloudClickStream.acked||cloudOutbox.length)queueCloudAction(null);
+      else resyncCloud();
+    }
   }
   function modal(title,body,actions) {
     $("modalTitle").textContent=title;
@@ -1075,14 +1110,16 @@
     row.append(rank,name,cash,rebirths);
     return row;
   }
+  let leaderboardRenderVersion=0;
   async function renderLeaderboard() {
+    const renderVersion=++leaderboardRenderVersion;
     const body=$("featureBody");body.className="feature-body";body.replaceChildren();
     body.append(featureHeader("Leaderboard","Refresh",renderLeaderboard));
     const status=featureElement("div","feature-message","Loading the Top 30...");
     body.append(status);
     try {
       const data=await apiJson("/api/leaderboard");
-      if(featureMode!=="leaderboard")return;
+      if(featureMode!=="leaderboard"||renderVersion!==leaderboardRenderVersion)return;
       status.remove();
       const players=Array.isArray(data.players)?data.players.slice(0,30):[];
       if(!players.length){
@@ -1105,7 +1142,7 @@
       if(!data.authenticated)body.append(featureElement("p","premium-note","Sign in with Google to join the leaderboard."));
     else if(account.needsUsername)body.append(featureElement("p","premium-note","Choose a username to join the leaderboard."));
     } catch (_) {
-      if(featureMode!=="leaderboard")return;
+      if(featureMode!=="leaderboard"||renderVersion!==leaderboardRenderVersion)return;
       status.className="feature-message error";
       status.textContent="Leaderboard is unavailable right now.";
       status.append(makeButton("Try again",false,renderLeaderboard));
@@ -1318,6 +1355,7 @@
     state.crateInventory=data.crateInventory&&typeof data.crateInventory==="object"?data.crateInventory:{};
     state.freeCrateClaims=data.freeCrateClaims&&typeof data.freeCrateClaims==="object"?data.freeCrateClaims:{};
     state.freeCrateStatus=data.freeCrateStatus&&typeof data.freeCrateStatus==="object"?data.freeCrateStatus:{};
+    state.quests=data.quests&&typeof data.quests==="object"?data.quests:null;
     state.rewardCosmetics=Array.isArray(data.rewardCosmetics)?data.rewardCosmetics:[];
     if(data.businessRevenue&&typeof data.businessRevenue==="object")for(const b of BUSINESS)state.businessRevenue[b.id]=safeNumber(data.businessRevenue[b.id]);
     for(const b of BUSINESS)state.businesses[b.id]=Math.floor(safeNumber(data.businesses?.[b.id]));
@@ -1340,6 +1378,7 @@
       if(found)toast("Booster found: "+found.name+" ("+found.rarity+")!");
     }
     if(data.event?.type==="achievementReward")toast("Achievement reward +"+euro(data.event.amount)+" · +"+format(data.event.diamonds||0)+" diamonds");
+    if(data.event?.type==="questClaimed")toast("Task reward claimed: +"+format(data.event.reward.diamonds)+" diamonds"+(Object.keys(data.event.reward.crates||{}).length?" · crate awarded":""));
     if(data.event?.type==="freeCrateClaimed")toast("Free "+(CRATES.find(c=>c.id===data.event.crateId)?.name||"crate")+" claimed");
     if(data.event?.type==="crateOpened"){
       showCrateReveal(data.event.reward,data.event.crateId);

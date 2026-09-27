@@ -1,0 +1,18 @@
+.quest-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:12px;margin-top:16px}
+.quest-card,.quest-completion{padding:16px;border:1px solid #5a806b;border-radius:12px;background:linear-gradient(145deg,#21493e,#15362f);color:#eff5e9;box-shadow:0 6px 16px #0002}
+.quest-card.claimed{border-color:#b4a76a;background:linear-gradient(145deg,#2b503d,#234137)}
+.quest-card-top,.quest-card-foot{display:flex;justify-content:space-between;align-items:center;gap:9px}
+.quest-difficulty{padding:4px 7px;border-radius:999px;background:#10392f;color:#f0d284;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.07em}
+.quest-reward{color:#eacb7e;font-size:11px;font-weight:800;text-align:right}
+.quest-card h3{margin:12px 0 5px;font-size:18px;line-height:1.2}
+.quest-card p{margin:0 0 12px;color:#c4d7c8;font-size:12px}
+.quest-progress{height:8px;overflow:hidden;border:1px solid #58775e;border-radius:8px;background:#0b2a26}
+.quest-progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#76c684,#f2d475)}
+.quest-card-foot{margin-top:11px;color:#c6ddcb;font-size:11px}
+.quest-card-foot button,.quest-completion button{min-height:36px;padding:7px 10px;border:1px solid #e9cf80;border-radius:7px;background:linear-gradient(#f4da90,#c8a955);color:#193a30;font-size:11px;font-weight:900;cursor:pointer}
+.quest-card-foot button:disabled,.quest-completion button:disabled{cursor:default;opacity:.58}
+.quest-completion{margin-top:20px;padding:20px;border-color:#cfb86c;background:linear-gradient(135deg,#2c503d,#183630)}
+.quest-completion h3{margin:0 0 7px;font-size:21px}
+.quest-completion p{margin:0 0 15px;color:#efda9c;font-size:13px}
+.quest-notice{padding:22px;border:1px solid #577b6d;border-radius:12px;background:#1a3e3a;color:#e8d38d}
+@media(max-width:600px){.quest-list{grid-template-columns:1fr;gap:9px}.quest-card{padding:12px}.quest-card h3{font-size:16px}.quest-completion{padding:15px}}

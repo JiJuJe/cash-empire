@@ -35,6 +35,7 @@ test("Google callback creates a stable account, username is unique, and sign out
   database.exec(readFileSync(new URL("../migrations/0003_playtime_boosters.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0004_cloud_click_streams.sql",import.meta.url),"utf8"));
   database.exec(readFileSync(new URL("../migrations/0005_admin_moderation.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0006_store_cosmetics_bills.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0009_achievement_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0010_free_crates.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0011_diamonds.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0012_business_revenue.sql",import.meta.url),"utf8")); database.exec(readFileSync(new URL("../migrations/0015_admin_product_entitlements.sql",import.meta.url),"utf8"));
+  database.exec(readFileSync(new URL("../migrations/0017_daily_weekly_quests.sql",import.meta.url),"utf8"));
   const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
   const jwk={...await crypto.subtle.exportKey("jwk",keys.publicKey),kid:"test-key",use:"sig"};
   const env={DB:d1(database),SESSION_SECRET:"a-secret-long-enough-for-tests",GOOGLE_CLIENT_ID:"client-test",GOOGLE_CLIENT_SECRET:"secret-test",PUBLIC_SITE_URL:origin};
