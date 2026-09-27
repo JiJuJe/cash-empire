@@ -17,7 +17,9 @@ export const PRODUCTS=[
   {id:'cosmic_empire_theme',name:'Cosmic Empire Theme',description:'A complete cosmic look.',category:'themes',priceCents:799,icon:'✦',cosmetics:pack('cosmic',all)},
   {id:'crate_wood',name:'Wood Crate',description:'One Wood Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:50,icon:'▣',repeatable:true},
   {id:'crate_iron',name:'Iron Crate',description:'One Iron Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:100,icon:'▣',repeatable:true},
-  {id:'crate_royal',name:'Royal Crate',description:'One Royal Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:300,icon:'▣',repeatable:true}
+  {id:'crate_royal',name:'Royal Crate',description:'One Royal Crate for your inventory. Preview reward odds before opening.',category:'crates',priceCents:300,icon:'▣',repeatable:true},
+  {id:'daily_task_refresh',name:'Daily Task Refresh',description:'Start one extra daily task round after claiming every daily reward.',category:'tasks',priceCents:100,icon:'↻',repeatable:true},
+  {id:'weekly_task_refresh',name:'Weekly Task Refresh',description:'Start one extra weekly task round after claiming every weekly reward.',category:'tasks',priceCents:500,icon:'↻',repeatable:true}
 ];
 export const PRODUCT_BY_ID=new Map(PRODUCTS.map(product=>[product.id,product]));
 export const COSMETIC_BY_ID=new Map(PRODUCTS.flatMap(product=>Object.entries(product.cosmetics||{}).map(([slot,id])=>[id,{id,slot,name:product.name}])));

@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const result=stmts.map(s=>({meta:{changes:db.prepare(s.sql).run(...s.args).changes}}));db.exec('COMMIT');return result}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql','0015_admin_product_entitlements.sql','0017_daily_weekly_quests.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql','0015_admin_product_entitlements.sql','0017_daily_weekly_quests.sql','0020_paid_quest_refreshes.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','Buyer',1,'buyer',1)").run();
   const token='S'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -45,7 +45,7 @@ test('all catalog prices are server selected and unknown products are rejected',
   const x=await setup();try{
     assert.equal((await x.post('/api/store/checkout',{productId:'unknown'})).status,400);
     assert.equal((await x.post('/api/store/checkout',{productId:'emerald_style',priceCents:1})).status,400);
-    for(const product of PRODUCTS){
+    for(const product of PRODUCTS.filter(item=>item.category!=="tasks")){
       x.db.prepare('DELETE FROM api_rate_limits').run();
       const result=await x.post('/api/store/checkout',{productId:product.id});assert.equal(result.status,200,product.id);
       const row=x.db.prepare('SELECT * FROM store_purchases WHERE product_id=?').get(product.id);
@@ -144,6 +144,30 @@ test('paid repeatable crate is granted once per verified checkout and may be bou
     assert.notEqual(first.id,second.id);
     assert.equal((await x.webhook(product,second,'evt_cratesecond')).status,200);
     assert.equal(JSON.parse(x.db.prepare("SELECT crate_inventory_json FROM progress WHERE user_id='u'").get().crate_inventory_json).wood,2);
+  }finally{x.close()}
+});
+test('paid task refresh requires completed tasks, survives webhook replay and consumes one credit',async()=>{
+  const x=await setup();try{
+    for(const [kind,price] of [['daily',100],['weekly',500]]){
+      const product=PRODUCTS.find(p=>p.id===kind+'_task_refresh');
+      assert.equal(product.priceCents,price);
+      assert.equal((await x.post('/api/store/checkout',{productId:product.id})).status,409);
+      const key=kind==='daily'?new Date().toISOString().slice(0,10):undefined;
+      const period=kind==='daily'?key:(await (await x.get('/api/progress/snapshot')).json()).quests.weekly.periodKey;
+      x.db.prepare(`UPDATE progress SET quest_${kind}_json=? WHERE user_id='u'`).run(JSON.stringify({key:period,cycle:0,counters:{clicks:100},claimed:[],completionClaimed:true}));
+      assert.equal((await x.post('/api/store/checkout',{productId:product.id})).status,200);
+      const purchase=x.db.prepare('SELECT * FROM store_purchases WHERE product_id=?').get(product.id);
+      assert.equal((await x.webhook(product,purchase,'evt_task'+kind)).status,200);
+      assert.equal((await x.webhook(product,purchase,'evt_taskreplay'+kind)).status,200);
+      let status=await (await x.get('/api/store/status')).json();assert.equal(status.refreshCredits[kind],1);
+      const action={kind,actionId:'refresh-'+kind+'-000001'};
+      assert.equal((await x.post('/api/quests/refresh',action)).status,200);
+      assert.equal((await x.post('/api/quests/refresh',action)).status,200);
+      status=await (await x.get('/api/store/status')).json();assert.equal(status.refreshCredits[kind],0);
+      const refreshed=JSON.parse(x.db.prepare(`SELECT quest_${kind}_json AS state FROM progress WHERE user_id='u'`).get().state);
+      assert.equal(refreshed.cycle,1);assert.equal(refreshed.completionClaimed,false);assert.deepEqual(refreshed.counters,{});
+      assert.equal((await x.post('/api/quests/refresh',{kind,actionId:'refresh-'+kind+'-000002'})).status,409);
+    }
   }finally{x.close()}
 });
 test('a paid Royal Crate with a missed webhook is reconciled exactly once from Stripe',async()=>{

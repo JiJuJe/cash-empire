@@ -3,7 +3,7 @@ import {handleAdminRequest,adminBoosts,boostMultiplier,moderationFor,moderationM
 import {BOOSTERS,EARLY_PRESTIGE,SLOT_PRICES,DROP_INTERVAL_MS,boosterBonus,rollBooster} from "./boosters.mjs";
 import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID,COSMETIC_SLOTS,publicCatalog} from "./store-catalog.mjs";
 import {achievementReward,achievementDiamondReward,CRATE_BY_ID,freeCratePeriod,freeCrateStatus,publicCrates,rollCrate} from "./rewards.mjs";
-import {normalizeQuestState,applyQuestDelta,questSummary,claimQuest} from "./quests.mjs";
+import {normalizeQuestState,refreshQuestState,applyQuestDelta,questSummary,claimQuest} from "./quests.mjs";
 const PRICE_GROWTH = 1.15;
 const LIMIT = 1e300;
 const BUSINESS = [
@@ -676,7 +676,13 @@ async function storeStatus(request,env,user){
   if(env.DB)await infrastructureLimit(env,request,"store-status:"+(user?.id||"guest"));
   if(user)try{await reconcilePendingPurchases(env,user.id,8);}catch(error){console.error("Payment reconciliation failed",error);}
   const entitlements=env.DB?await storeOwnership(env,user?.id):{};
-  return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements,catalog:publicCatalog()});
+  const refreshCredits=user?await questRefreshCredits(env,user.id):{daily:0,weekly:0};
+  return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements,refreshCredits,catalog:publicCatalog()});
+}
+async function questRefreshCredits(env,userId){
+  const rows=await env.DB.prepare("SELECT kind,COUNT(*) AS amount FROM quest_refreshes WHERE user_id=? AND consumed_at_ms IS NULL GROUP BY kind").bind(userId).all();
+  const credits={daily:0,weekly:0};for(const row of rows.results||[])if(row.kind in credits)credits[row.kind]=Number(row.amount)||0;
+  return credits;
 }
 async function beginCheckout(request,env,user){
   if(!paymentsConfigured(env))fail(503,"Payments are not available yet.");
@@ -687,6 +693,13 @@ async function beginCheckout(request,env,user){
   const product=PRODUCT_BY_ID.get(body.productId);
   if(!product)fail(400,"Unknown product.");
   try{await reconcilePendingPurchases(env,user.id,8);}catch(error){console.error("Payment reconciliation failed",error);}
+  if(product.category==="tasks"){
+    const kind=product.id.startsWith("daily")?"daily":"weekly";
+    const row=await env.DB.prepare("SELECT quest_daily_json,quest_weekly_json FROM progress WHERE user_id=?").bind(user.id).first();
+    const current=normalizeQuestState(decodeJson(kind==="daily"?row?.quest_daily_json:row?.quest_weekly_json||"{}",{}),kind,Date.now());
+    if(!current.completionClaimed)fail(409,"Claim every task and the grand reward before buying a refresh.");
+    if((await questRefreshCredits(env,user.id))[kind]>0)fail(409,"Use your paid refresh credit first.");
+  }
   if(!product.repeatable&&(await storeOwnership(env,user.id))[product.id])fail(409,"Already owned.");
   const pending=await env.DB.prepare("SELECT checkout_url,created_at_ms FROM store_purchases WHERE user_id=? AND product_id=? AND status='pending' ORDER BY created_at_ms DESC LIMIT 1")
     .bind(user.id,product.id).first();
@@ -753,11 +766,14 @@ async function fulfillPaidSession(env,session,eventId=null){
   await ensureProgress(env,purchase.user_id,now);
   const statements=[];
   if(eventId)statements.push(env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(eventId,now));
-  if(product.repeatable){
+  if(product.category==="crates"){
     const crateId=product.id.slice(6);
     statements.push(env.DB.prepare(`UPDATE progress SET crate_inventory_json=json_set(crate_inventory_json,?,COALESCE(json_extract(crate_inventory_json,?),0)+1),version=version+1
       WHERE user_id=? AND EXISTS(SELECT 1 FROM store_purchases WHERE id=? AND status='pending')`)
       .bind('$.'+crateId,'$.'+crateId,purchase.user_id,purchase.id));
+  }else if(product.category==="tasks"){
+    statements.push(env.DB.prepare("INSERT OR IGNORE INTO quest_refreshes(purchase_id,user_id,kind,created_at_ms) VALUES(?,?,?,?)")
+      .bind(purchase.id,purchase.user_id,product.id.startsWith("daily")?"daily":"weekly",now));
   }
   if(modern)statements.push(env.DB.prepare("UPDATE store_purchases SET status='paid',paid_at_ms=? WHERE id=? AND status='pending'").bind(now,purchase.id));
   if(product.id==="double_money"){
@@ -815,6 +831,34 @@ async function reconcilePendingPurchases(env,userId=null,limit=25){
     }catch(error){console.error('Pending checkout reconciliation failed',error);}
   }
 }
+async function postQuestRefresh(request,env,user){
+  if(!user||!user.username_set)fail(401,"Choose a username first.");
+  sameOrigin(request);
+  await infrastructureLimit(env,request,"quest-refresh:"+user.id);
+  const body=await readBody(request,["kind","actionId"]);
+  if(!["daily","weekly"].includes(body.kind)||typeof body.actionId!=="string"||!STREAM_ID.test(body.actionId))fail(400,"Invalid quest refresh.");
+  const prior=await env.DB.prepare("SELECT user_id,action_type FROM progress_actions WHERE action_id=?").bind(body.actionId).first();
+  if(prior){if(prior.user_id!==user.id||prior.action_type!=="quest_refresh")fail(409,"Action ID conflict.");return json({ok:true,duplicate:true,refreshCredits:await questRefreshCredits(env,user.id)});}
+  for(let attempt=0;attempt<3;attempt++){
+    const now=Date.now();
+    const receipt=await env.DB.prepare("SELECT purchase_id FROM quest_refreshes WHERE user_id=? AND kind=? AND consumed_at_ms IS NULL ORDER BY created_at_ms LIMIT 1").bind(user.id,body.kind).first();
+    if(!receipt)fail(409,"No paid refresh credit available.");
+    const row=await ensureProgress(env,user.id,now);
+    const current=decodeJson(body.kind==="daily"?row.quest_daily_json:row.quest_weekly_json,{});
+    let next;try{next=refreshQuestState(current,body.kind,now);}catch(error){fail(409,error.message);}
+    const column=body.kind==="daily"?"quest_daily_json":"quest_weekly_json";
+    const result=await env.DB.batch([
+      env.DB.prepare(`UPDATE progress SET ${column}=?,version=version+1 WHERE user_id=? AND version=? AND EXISTS(SELECT 1 FROM quest_refreshes WHERE purchase_id=? AND consumed_at_ms IS NULL)`)
+        .bind(JSON.stringify(next),user.id,row.version,receipt.purchase_id),
+      env.DB.prepare("UPDATE quest_refreshes SET consumed_at_ms=? WHERE purchase_id=? AND consumed_at_ms IS NULL AND EXISTS(SELECT 1 FROM progress WHERE user_id=? AND version=?)")
+        .bind(now,receipt.purchase_id,user.id,row.version+1),
+      env.DB.prepare("INSERT INTO progress_actions(action_id,user_id,action_type,created_at_ms) SELECT ?,?,'quest_refresh',? WHERE changes()=1")
+        .bind(body.actionId,user.id,now)
+    ]);
+    if(result[0].meta?.changes===1&&result[1].meta?.changes===1&&result[2].meta?.changes===1)return json({ok:true,refreshCredits:await questRefreshCredits(env,user.id)});
+  }
+  fail(409,"Progress changed. Try again.");
+}
 export {sanitizeUsername};
 export default {
   async scheduled(_controller,env,ctx){ctx.waitUntil(reconcilePendingPurchases(env));},
@@ -832,6 +876,7 @@ export default {
       if(authResponse)return authResponse;
       if(url.pathname==="/api/store/webhook"&&request.method==="POST")return await stripeWebhook(request,env);
       const user=await sessionUser(request,env);
+      if(url.pathname==="/api/quests/refresh"&&request.method==="POST")return await postQuestRefresh(request,env,user);
       const moderation=user?moderationMessage(await moderationFor(env,user.id)):null;
       if(moderation&&url.pathname!=="/api/leaderboard")fail(403,moderation.message+(moderation.expiresAtMs?" Until "+new Date(moderation.expiresAtMs).toISOString():""));
       if(url.pathname.startsWith("/api/admin/"))return await handleAdminRequest(request,env,user,{infrastructureLimit,rateLimit,hasDoubleMoney,premiumSlots,storeOwnership,loadProgress,advance,progressSummary,updateStatement});

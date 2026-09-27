@@ -122,7 +122,7 @@ test("Store remains unavailable without a signed-in account or payment configura
   const status=await worker.fetch(new Request("https://game.example/api/store/status"),{});
   const catalog=await status.json();
   assert.equal(catalog.authenticated,false);assert.equal(catalog.paymentsAvailable,false);
-  assert.equal(catalog.entitlements.double_money,undefined);assert.equal(catalog.catalog.length,16);
+  assert.equal(catalog.entitlements.double_money,undefined);assert.equal(catalog.catalog.length,18);
   const checkout=await worker.fetch(new Request("https://game.example/api/store/checkout",{method:"POST"}),{DB:{}});
   assert.equal(checkout.status,503);
 });

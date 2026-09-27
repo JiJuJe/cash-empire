@@ -110,7 +110,7 @@
   });
   let state = defaultState();
   let premiumMultiplier = 1;
-  let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false,entitlements:{},catalog:[]};
+  let premiumStatus = {authenticated:false,paymentsAvailable:false,owned:false,entitlements:{},catalog:[],refreshCredits:{daily:0,weekly:0}};
   let cosmetics={owned:[],loadout:{}};
   let account={authenticated:false,username:null,userId:null,needsUsername:false};
   let cloudNameAliases=[];
@@ -977,7 +977,7 @@
     if(!cloudMode||!account.authenticated){list.append(featureElement("p","quest-notice","Sign in with Google to track and claim verified tasks."));return;}
     if(!data){list.append(featureElement("p","quest-notice","Loading your tasks..."));return;}
     $(kind+"QuestCount").textContent=data.quests.filter(q=>q.claimed).length+" / "+data.quests.length+" claimed";
-    $(kind+"QuestReset").textContent="Resets "+new Date(data.endsAtMs).toLocaleString()+" · progress counts during this "+(kind==="daily"?"day":"week")+".";
+    $(kind+"QuestReset").textContent=(data.cycle?"Extra round "+(data.cycle+1)+" · ":"")+"Resets "+new Date(data.endsAtMs).toLocaleString()+" · progress counts during this "+(kind==="daily"?"day":"week")+".";
     const progressText=(value,metric)=>metric==="playtimeMs"?Math.floor(value/60000)+" min":format(value);
     for(const quest of data.quests){
       const card=featureElement("article","quest-card"+(quest.claimed?" claimed":""));
@@ -1000,6 +1000,21 @@
       done.disabled=true;queueCloudAction({type:"claim_quest",period:kind,questId:"completion"});
     });
     completion.append(done);
+    if(data.completionClaimed){
+      const credits=Math.max(0,Number(premiumStatus.refreshCredits?.[kind])||0);
+      const price=kind==="daily"?"€1.00":"€5.00";
+      const note=featureElement("p","quest-notice",credits?credits+" paid refresh credit"+(credits===1?"":"s")+" available.":"Finished early? Start another "+kind+" task round for "+price+". The normal calendar reset still happens on time.");
+      const button=makeButton(credits?"Start next "+kind+" tasks":premiumStatus.paymentsAvailable?"Refresh "+kind+" tasks · "+price:"Payments unavailable",!credits&&!premiumStatus.paymentsAvailable,async()=>{
+        if(!credits){beginPremiumCheckout(kind+"_task_refresh",button,note);return;}
+        button.disabled=true;note.textContent="Starting your next task round...";
+        try{
+          await apiJson("/api/quests/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,actionId:crypto.randomUUID()})});
+          premiumStatus.refreshCredits[kind]=Math.max(0,credits-1);
+          const synced=await resyncCloud();renderQuests(kind);toast(synced?"New "+kind+" tasks ready":"Task refresh saved. Reconnect to load the new round.");
+        }catch(error){note.textContent=error.message||"Could not refresh tasks.";button.disabled=false;}
+      });
+      completion.append(note,button);
+    }
   }
   function renderCurrent() {
     if(activeTab==="home")updateV2SceneControls();
@@ -1027,6 +1042,7 @@
     document.querySelectorAll(".tab-panel").forEach(p=>{const on=p.id==="tab-"+tab;p.hidden=!on;p.classList.toggle("active",on);});
     renderCurrent();
     if((tab==="daily"||tab==="weekly")&&cloudMode&&account.authenticated){
+      refreshPremiumStatus().then(()=>renderQuests(tab));
       if(pendingClicks>0||cloudClickStream.total>cloudClickStream.acked||cloudOutbox.length)queueCloudAction(null);
       else resyncCloud();
     }
@@ -1083,7 +1099,7 @@
         authenticated:data.authenticated===true,
         paymentsAvailable:data.paymentsAvailable===true,
         owned:data.authenticated===true&&data.entitlements?.double_money===true,
-        entitlements:data.entitlements||{},catalog:Array.isArray(data.catalog)?data.catalog:[]
+        entitlements:data.entitlements||{},catalog:Array.isArray(data.catalog)?data.catalog:[],refreshCredits:data.refreshCredits||{daily:0,weekly:0}
       };
       premiumMultiplier=premiumStatus.owned?2:1;
     } catch (_) { /* Keep known paid ownership during a temporary outage. */ }
@@ -1451,9 +1467,9 @@
     return apiJson("/api/progress/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...action,generation:cloudGeneration})});
   }
   async function resyncCloud(){
-    if(!cloudMode)return;
-    try{const data=await apiJson("/api/progress/snapshot");if(cloudMode)applyCloudSnapshot(data);cloudUnavailable=false;renderCloudStatus();}
-    catch(_){cloudUnavailable=true;renderCloudStatus();}
+    if(!cloudMode)return false;
+    try{const data=await apiJson("/api/progress/snapshot");if(cloudMode)applyCloudSnapshot(data);cloudUnavailable=false;renderCloudStatus();return true;}
+    catch(_){cloudUnavailable=true;renderCloudStatus();return false;}
   }
   function scheduleCloudRetry(){
     if(cloudRetryTimer||!cloudMode)return;
