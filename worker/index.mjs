@@ -118,14 +118,12 @@ function clickRate(s,entitled,now=Date.now()){
 }
 function rebirthRequirement(s){
   const tier=Math.max(1,Math.floor(s.rebirths)+1);
-  return 1000000*tier*tier;
+  const base=tier===1?1000000:1000000*tier*tier*2**(tier-2);
+  return Math.ceil(base*Math.max(.65,1-(s.prestige.includes("rebirthMastery")?.15:0)-bonus(s,"rebirthDiscount")));
 }
 function rebirthPoints(s){
   if(s.runEarned<rebirthRequirement(s))return 0;
-  const tier=Math.max(1,Math.floor(s.rebirths)+1);
-  if(tier===1)return 1;
-  const multiplier=1+(s.prestige.includes("rebirthMastery")?.15:0)+bonus(s,"rebirthPoints");
-  return Math.floor(tier*multiplier);
+  return 1;
 }
 function award(s,amount){
   if(!Number.isFinite(amount)||amount<0)throw Error("Invalid production.");

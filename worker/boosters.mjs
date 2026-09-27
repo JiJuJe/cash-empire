@@ -12,7 +12,7 @@ export const BOOSTERS=[
   ["smartManager","Smart Manager","rare","discount",.04],
   ["ventureCapitalist","Venture Capitalist","epic","total",.25],
   ["marketGenius","Market Genius","epic","business",.35],
-  ["rebirthStrategist","Rebirth Strategist","epic","rebirthPoints",.20],
+  ["rebirthStrategist","Rebirth Strategist","epic","rebirthDiscount",.20],
   ["goldenTouch","Golden Touch","epic","goldenCash",.35],
   ["billionaireMentor","Billionaire Mentor","legendary","total",.40],
   ["empireArchitect","Empire Architect","legendary","business",.55],

@@ -154,15 +154,15 @@ test("webhook signature rejects tampering",async()=>{
 });
 
 test("Rebirth tiers require the previous Rebirth and preserve permanent investments",()=>{
-  for(const [rebirths,earned,requirement,points] of [[0,999999,1000000,0],[0,9000000,1000000,1],[1,3999999,4000000,0],[1,4000000,4000000,2],[2,8999999,9000000,0],[2,9000000,9000000,3]]){
+  for(const [rebirths,earned,requirement,points] of [[0,999999,1000000,0],[0,9000000,1000000,1],[1,3999999,4000000,0],[1,4000000,4000000,1],[2,17999999,18000000,0],[2,18000000,18000000,1],[99,1e50,1000000*10000*2**98,1]]){
     const state=progress({rebirths,runEarned:earned,empirePoints:500});
     assert.equal(testing.rebirthRequirement(state),requirement);
     assert.equal(testing.rebirthPoints(state),points);
   }
-  const old=progress({runEarned:9000000,rebirths:2,prestige:["starterCapital","quickCollectors","clickTraining","businessNetwork","bulkBuyer","investor"],empirePoints:30,empireSpent:28});
+  const old=progress({runEarned:18000000,rebirths:2,prestige:["starterCapital","quickCollectors","clickTraining","businessNetwork","bulkBuyer","investor"],empirePoints:30,empireSpent:28});
   const next=testing.applyAction(old,{type:"rebirth"},100000,false);
   assert.equal(next.rebirths,3);assert.equal(next.balance,250);assert.equal(next.businesses.collector,5);
-  assert.deepEqual(next.prestige,old.prestige);assert.equal(next.empirePoints,33);
+  assert.deepEqual(next.prestige,old.prestige);assert.equal(next.empirePoints,31);
   assert.ok(testing.clickRate(next,false)>1.3);assert.ok(testing.businessRate(next,false)>0);
   assert.equal(testing.discount(next),.97);
 });
@@ -173,9 +173,9 @@ test("Rebirth requires this run's earnings and preserves permanent progress",()=
     boosterInventory:{coinPurse:2},equipped:["coinPurse"],slotsUnlocked:2,totalPlaytimeMs:12345,
     empirePoints:3,empireSpent:1});
   assert.throws(()=>testing.applyAction(before,{type:"rebirth"},100000,false));
-  before.runEarned=9000000;
+  before.runEarned=18000000;
   const after=testing.applyAction(before,{type:"rebirth"},100000,false);
-  assert.equal(after.rebirths,3);assert.equal(after.empirePoints,6);assert.equal(after.empireSpent,1);
+  assert.equal(after.rebirths,3);assert.equal(after.empirePoints,4);assert.equal(after.empireSpent,1);
   assert.equal(after.balance,0);assert.equal(after.runEarned,0);
   assert.equal(after.businesses.collector,0);assert.deepEqual(after.upgrades,[]);
   assert.equal(after.lifetime,9000000);assert.equal(after.totalClicks,456);
@@ -205,6 +205,25 @@ test("one-time Rebirth migration changes only Rebirth fields and concurrency ver
       assert.deepEqual(after[key],before[key],key);
     }
     assert.deepEqual([after.rebirths,after.empire_points,after.empire_spent,after.prestige_json,after.rebirth_era,after.version],[0,0,0,"[]",1,6]);
+  }finally{db.close()}
+});
+
+test("new one-time Rebirth reset preserves every unrelated progress field",()=>{
+  const db=new DatabaseSync(":memory:");
+  try{
+    const files=["0001_leaderboard_store.sql","0002_google_accounts.sql","0003_playtime_boosters.sql","0004_cloud_click_streams.sql","0005_admin_moderation.sql","0006_store_cosmetics_bills.sql","0007_backfill_bill_claims.sql","0008_reset_rebirth_once.sql","0008a_global_progress_reset_once.sql","0009_achievement_crates.sql","0010_free_crates.sql","0011_diamonds.sql","0012_business_revenue.sql","0013_global_reset_v2_extras.sql","0014_global_restart_after_v2_launch_once.sql","0015_admin_product_entitlements.sql","0016_global_chat.sql","0017_daily_weekly_quests.sql"];
+    for(const name of files)db.exec(readFileSync(new URL("../migrations/"+name,import.meta.url),"utf8"));
+    db.prepare("INSERT INTO users(id,username,created_at_ms) VALUES('p','Player',1)").run();
+    db.prepare("INSERT INTO progress(user_id,balance,run_earned,lifetime_cash,rebirths,empire_points,empire_spent,prestige_json,businesses_json,upgrades_json,booster_inventory_json,version,last_accrual_ms) VALUES('p',?,?,?,?,?,?,?,?,?,?,?,1)")
+      .run(4321,7654321,9999999,7,42,12,'["starterCapital"]','{"collector":17}','["wallet"]','{"coinPurse":2}',5);
+    const before=db.prepare("SELECT * FROM progress WHERE user_id='p'").get();
+    db.exec(readFileSync(new URL("../migrations/0018_rebirth_one_point_reset_once.sql",import.meta.url),"utf8"));
+    const after=db.prepare("SELECT * FROM progress WHERE user_id='p'").get();
+    for(const key of Object.keys(before)){
+      if(["rebirths","empire_points","empire_spent","prestige_json","rebirth_era","version"].includes(key))continue;
+      assert.deepEqual(after[key],before[key],key);
+    }
+    assert.deepEqual([after.rebirths,after.empire_points,after.empire_spent,after.prestige_json,after.rebirth_era,after.version],[0,0,0,"[]",before.rebirth_era+1,6]);
   }finally{db.close()}
 });
 

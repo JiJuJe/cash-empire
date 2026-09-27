@@ -54,7 +54,7 @@
     ["bulkBuyer","Bulk Buyer",7,"Businesses cost 3% less."],
     ["empireMomentum","Empire Momentum",8,"Permanent +15% total earnings."],
     ["goldenReserve","Golden Reserve",9,"Golden Bill cash rewards +25%."],
-    ["rebirthMastery","Rebirth Mastery",10,"Future Rebirths give +15% Empire Points."]
+    ["rebirthMastery","Rebirth Mastery",10,"Future Rebirths require 15% less earned cash."]
   ].map(([id,name,cost,description])=>({id,name,cost,description,icon:"✦",image:id==="starterCapital"?"assets/ui/first-dollar.png":undefined,early:true}));
   const BOOSTERS=[
     ["coinPurse","Coin Purse","common","total",.04,"+4% total earnings"],
@@ -70,7 +70,7 @@
     ["smartManager","Smart Manager","rare","discount",.04,"Businesses cost 4% less"],
     ["ventureCapitalist","Venture Capitalist","epic","total",.25,"+25% total earnings"],
     ["marketGenius","Market Genius","epic","business",.35,"+35% business earnings"],
-    ["rebirthStrategist","Rebirth Strategist","epic","rebirthPoints",.20,"+20% Empire Points from Rebirth"],
+    ["rebirthStrategist","Rebirth Strategist","epic","rebirthDiscount",.20,"Rebirths require 20% less earned cash"],
     ["goldenTouch","Golden Touch","epic","goldenCash",.35,"Golden Bill cash rewards +35%"],
     ["billionaireMentor","Billionaire Mentor","legendary","total",.40,"+40% total earnings"],
     ["empireArchitect","Empire Architect","legendary","business",.55,"+55% business earnings"],
@@ -97,7 +97,7 @@
   const $ = id => document.getElementById(id);
   const moneyEl = $("balance"), rateEl = $("rate"), pileEl = $("moneyPile");
   const defaultState = () => ({
-    version:1,globalResetVersion:3,money:0,diamonds:0,runEarned:0,lifetime:0,
+    version:1,globalResetVersion:3,rebirthResetVersion:1,money:0,diamonds:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},freeCrateStatus:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],quests:null,
@@ -758,11 +758,13 @@
     toast("Achievement reward +"+euro(amount)+" · +"+format(diamonds)+" diamonds");afterAction();
   }
   function pointsAvailable() {return Math.max(0,state.empireTotal-state.empireSpent);}
-  function rebirthRequirement(){const tier=Math.max(1,Math.floor(state.rebirths)+1);return 1000000*tier*tier;}
+  function rebirthRequirement(tier=Math.max(1,Math.floor(state.rebirths)+1)){
+    const base=tier===1?1000000:1000000*tier*tier*2**(tier-2);
+    return Math.ceil(base*Math.max(.65,1-(hasPrestige("rebirthMastery")?.15:0)-boosterBonus("rebirthDiscount")));
+  }
   function pointsGain(){
-    const tier=Math.max(1,Math.floor(state.rebirths)+1);
     if(state.runEarned<rebirthRequirement())return 0;
-    return tier===1?1:Math.floor(tier*(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints")));
+    return 1;
   }
   function renderPrestige() {
     const gain=pointsGain(),requirement=rebirthRequirement();
@@ -775,7 +777,7 @@
     const percent=Math.min(100,Math.max(0,state.runEarned/requirement*100));
     $("rebirthProgress").setAttribute("aria-valuenow",String(Math.round(percent)));
     $("rebirthProgressFill").style.width=percent+"%";
-    const nextRequirement=1000000*Math.pow(state.rebirths+2,2);
+    const nextRequirement=rebirthRequirement(state.rebirths+2);
     $("rebirthNext").textContent=gain?"Eligible now. Rebirth to unlock the next tier at "+euro(nextRequirement)+" earned in the next run.":euro(requirement-state.runEarned)+" more earned this run to unlock this Rebirth tier.";
     $("rebirthButton").disabled=gain<=0;
     $("rebirthButton").textContent="REBIRTH FOR +"+format(gain)+" EMPIRE POINT"+(gain===1?"":"S");
@@ -1567,6 +1569,7 @@
   function normalize(raw) {
     if(!raw || typeof raw!=="object" || raw.version!==1)throw Error("Invalid save version.");
     raw=migratePreResetSave(raw);
+    if(raw.rebirthResetVersion!==1)raw={...raw,rebirthResetVersion:1,rebirths:0,empireTotal:0,empireSpent:0,prestigeUpgrades:[]};
     const s=defaultState();
     for(const key of ["money","diamonds","runEarned","lifetime","empireTotal","empireSpent","rebirths","totalClicks","businessesPurchased","goldenClicked","highestRate","totalPlaytime","lastPlayed"])
       s[key]=safeNumber(raw[key],s[key]);
@@ -1596,7 +1599,7 @@
     return s;
   }
   function load() {
-    try {const text=localStorage.getItem(SAVE_KEY);if(text){const raw=JSON.parse(text);state=normalize(raw);if(raw.globalResetVersion!==3)save();}
+    try {const text=localStorage.getItem(SAVE_KEY);if(text){const raw=JSON.parse(text);state=normalize(raw);if(raw.globalResetVersion!==3||raw.rebirthResetVersion!==1)save();}
       if(state.rushUntilMs>Date.now())buff={type:"goldrush",mult:7,until:state.rushUntilMs};}
     catch (_) {state=defaultState();toast("Saved data could not be read. A fresh game has started.");}
     cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};applyCosmeticLook();
