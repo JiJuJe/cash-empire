@@ -113,10 +113,16 @@ function clickRate(s,entitled,now=Date.now()){
   for(const upgrade of SPECIAL)if(upgrade.effect==="click"&&s.upgrades.includes(upgrade.id))value*=upgrade.mult;
   return value*(entitled?2:1);
 }
+function rebirthRequirement(s){
+  const tier=Math.max(1,Math.floor(s.rebirths)+1);
+  return 1000000*tier*tier;
+}
 function rebirthPoints(s){
-  if(s.runEarned<1000000)return 0;
+  if(s.runEarned<rebirthRequirement(s))return 0;
+  const tier=Math.max(1,Math.floor(s.rebirths)+1);
+  if(tier===1)return 1;
   const multiplier=1+(s.prestige.includes("rebirthMastery")?.15:0)+bonus(s,"rebirthPoints");
-  return Math.floor(Math.sqrt(s.runEarned/1000000)*multiplier);
+  return Math.floor(tier*multiplier);
 }
 function award(s,amount){
   if(!Number.isFinite(amount)||amount<0)throw Error("Invalid production.");
@@ -779,4 +785,4 @@ export default {
     }
   }
 };
-export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,rebirthPoints,heartbeatState,advance,discount,verifyStripeSignature,loadProgress,rollBillTier,BILL_TIERS};
+export const testing={sanitizeUsername,totalCost,applyAction,businessRate,clickRate,rebirthRequirement,rebirthPoints,heartbeatState,advance,discount,verifyStripeSignature,loadProgress,rollBillTier,BILL_TIERS};

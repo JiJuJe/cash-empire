@@ -55,6 +55,9 @@ test('V2 resets legacy guest progress once while preserving protected inventory'
   assert.deepEqual(Array.from(result.equippedBoosters.slice(0, 2)), legacy.equippedBoosters);
   assert.equal(result.settings.animations, false);
   assert.equal(result.settings.particles, false);
-  assert.equal(result.globalResetVersion, 2);
+  assert.equal(result.globalResetVersion, 3);
   assert.equal(context.normalizeSave(result).money, 1000000);
+  const afterEarlierReset={...legacy,globalResetVersion:2,money:123,runEarned:10,rebirths:1};
+  assert.equal(context.normalizeSave(afterEarlierReset).money,1000000);
+  assert.equal(context.normalizeSave(afterEarlierReset).rebirths,0);
 });

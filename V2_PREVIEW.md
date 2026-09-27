@@ -1,6 +1,6 @@
 # ClickTheCash V2 local preview
 
-V2 lives on the `clickthecash-v2` branch. It has not been deployed to the production domain.
+V2 is deployed to the production domain. This document describes its separate local preview database.
 
 From the repository root in Windows PowerShell:
 

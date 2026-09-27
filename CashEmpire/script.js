@@ -97,7 +97,7 @@
   const $ = id => document.getElementById(id);
   const moneyEl = $("balance"), rateEl = $("rate"), pileEl = $("moneyPile");
   const defaultState = () => ({
-    version:1,globalResetVersion:2,money:0,diamonds:0,runEarned:0,lifetime:0,
+    version:1,globalResetVersion:3,money:0,diamonds:0,runEarned:0,lifetime:0,
     businesses:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     businessRevenue:Object.fromEntries(BUSINESS.map(b => [b.id,0])),
     upgrades:[],achievements:[],achievementClaims:[],crateInventory:{},freeCrateClaims:{},freeCrateStatus:{},rewardCosmetics:[],cosmeticLoadout:{},prestigeUpgrades:[],
@@ -758,19 +758,25 @@
     toast("Achievement reward +"+euro(amount)+" · +"+format(diamonds)+" diamonds");afterAction();
   }
   function pointsAvailable() {return Math.max(0,state.empireTotal-state.empireSpent);}
-  function pointsGain() {return state.runEarned<1000000?0:Math.floor(Math.sqrt(state.runEarned/1000000)*(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints")));}
+  function rebirthRequirement(){const tier=Math.max(1,Math.floor(state.rebirths)+1);return 1000000*tier*tier;}
+  function pointsGain(){
+    const tier=Math.max(1,Math.floor(state.rebirths)+1);
+    if(state.runEarned<rebirthRequirement())return 0;
+    return tier===1?1:Math.floor(tier*(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints")));
+  }
   function renderPrestige() {
-    const gain=pointsGain();
+    const gain=pointsGain(),requirement=rebirthRequirement();
     $("pointsOwned").textContent=format(pointsAvailable());
     $("pointsGain").textContent="+"+format(gain);
     $("rebirthRunEarned").textContent=euro(state.runEarned);
     $("rebirthCurrentBonus").textContent="+"+format(state.rebirths*10,0)+"%";
     $("rebirthBonus").textContent="+"+format((state.rebirths+1)*10,0)+"%";
-    const percent=Math.min(100,Math.max(0,state.runEarned/1000000*100));
+    $("rebirthRequirement").textContent=euro(requirement);
+    const percent=Math.min(100,Math.max(0,state.runEarned/requirement*100));
     $("rebirthProgress").setAttribute("aria-valuenow",String(Math.round(percent)));
     $("rebirthProgressFill").style.width=percent+"%";
-    const nextTarget=Math.max(1000000,Math.ceil(Math.pow(gain+1,2)*1000000/Math.pow(1+(hasPrestige("rebirthMastery")?.15:0)+boosterBonus("rebirthPoints"),2)));
-    $("rebirthNext").textContent=gain?"Eligible now. Next Empire Point near "+euro(nextTarget)+" earned this run.":euro(1000000-state.runEarned)+" more earned this run to unlock Rebirth.";
+    const nextRequirement=1000000*Math.pow(state.rebirths+2,2);
+    $("rebirthNext").textContent=gain?"Eligible now. Rebirth to unlock the next tier at "+euro(nextRequirement)+" earned in the next run.":euro(requirement-state.runEarned)+" more earned this run to unlock this Rebirth tier.";
     $("rebirthButton").disabled=gain<=0;
     $("rebirthButton").textContent="REBIRTH FOR +"+format(gain)+" EMPIRE POINT"+(gain===1?"":"S");
     for(const [target,upgrades] of [["earlyPrestigeTree",PRESTIGE.filter(p=>p.early)],["prestigeTree",PRESTIGE.filter(p=>!p.early)]]){
@@ -1511,9 +1517,9 @@
     catch (_) {toast("Browser storage is unavailable. Export your save to keep progress.");}
   }
   function migratePreResetSave(raw) {
-    if(raw.globalResetVersion>=2)return raw;
+    if(raw.globalResetVersion>=3)return raw;
     const played=Number(raw.money)>0||Number(raw.lifetime)>0||Number(raw.runEarned)>0||Number(raw.totalClicks)>0||Number(raw.totalPlaytime)>0||Number(raw.rebirths)>0||Object.values(raw.businesses||{}).some(n=>Number(n)>0);
-    return {...defaultState(),globalResetVersion:2,money:played?1000000:0,
+    return {...defaultState(),globalResetVersion:3,money:played?1000000:0,
       boosterInventory:raw.boosterInventory,equippedBoosters:raw.equippedBoosters,
       boosterSlotsUnlocked:raw.boosterSlotsUnlocked,premiumBoosterSlots:raw.premiumBoosterSlots,
       rewardCosmetics:raw.rewardCosmetics,cosmeticLoadout:raw.cosmeticLoadout,
@@ -1551,7 +1557,7 @@
     return s;
   }
   function load() {
-    try {const text=localStorage.getItem(SAVE_KEY);if(text){const raw=JSON.parse(text);state=normalize(raw);if(raw.globalResetVersion!==2)save();}
+    try {const text=localStorage.getItem(SAVE_KEY);if(text){const raw=JSON.parse(text);state=normalize(raw);if(raw.globalResetVersion!==3)save();}
       if(state.rushUntilMs>Date.now())buff={type:"goldrush",mult:7,until:state.rushUntilMs};}
     catch (_) {state=defaultState();toast("Saved data could not be read. A fresh game has started.");}
     cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};applyCosmeticLook();
