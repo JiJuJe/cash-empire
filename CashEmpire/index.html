@@ -10,10 +10,12 @@
   <link rel="stylesheet" href="v2.css?v=1">
   <link rel="stylesheet" href="crates.css?v=3">
   <link rel="stylesheet" href="cosmetic-v2.css?v=2">
+  <link rel="stylesheet" href="chat.css?v=1">
   <script src="cloud-outbox.js?v=free-crates-1" defer></script>
   <script src="wealth-progression.js?v=empire-2" defer></script>
   <script src="v2-shell.js?v=1" defer></script>
   <script src="script.js?v=rebirth-tiers-1" defer></script>
+  <script src="chat.js?v=1" defer></script>
 </head>
 <body>
   <div class="game-shell">
@@ -44,6 +46,7 @@
           <button class="tab" data-tab="crates" type="button">CRATES</button>
           <button class="tab" data-tab="cosmetics" type="button">COSMETICS</button>
           <button class="tab" data-feature="leaderboard" type="button">LEADERBOARD</button>
+          <button class="tab" data-tab="chat" type="button">CHAT</button>
           <button class="tab" data-feature="store" type="button">STORE</button>
         </nav>
         <div id="tab-upgrades" class="tab-panel active">
@@ -69,6 +72,7 @@
         <div id="tab-boosters" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">RARE FINDS</span><h2>Boosters</h2></div></div><p class="section-intro">Drops can appear while you actively play. Equip one copy of each booster.</p><h3 class="tree-title">Equipment · 6 slots</h3><div id="boosterSlots" class="booster-slots"></div><h3 class="tree-title">Inventory</h3><div id="boosterInventory" class="booster-inventory"></div></div>
         <div id="tab-crates" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">OPEN YOUR FORTUNE</span><h2>Crates</h2></div></div><p class="section-intro">Claim a free Wood Crate daily, Iron Crate weekly, and Royal Crate monthly. Free crates reset at 00:00 UTC. Earn diamonds from achievement claims, or buy crates with diamonds or secure checkout. Preview the exact reward categories and odds before opening.</p><div class="v2-crate-wallet"><span class="v2-diamond-gem" aria-hidden="true"></span><strong id="crateDiamondBalance">0</strong><span>diamonds available</span></div><div id="crateList" class="v2-crate-list"></div></div>
         <div id="tab-cosmetics" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">YOUR LOOK, EVERYWHERE</span><h2>Cosmetics</h2></div></div><p class="section-intro">Choose a look for each slot. Equipped items follow your Google account.</p><div id="cosmeticsList" class="cosmetics-list"></div></div>
+        <div id="tab-chat" class="tab-panel" hidden><div class="section-heading"><div><span class="eyebrow">TALK TO THE WHOLE EMPIRE</span><h2>Global chat</h2></div></div><p class="section-intro">Messages are public to all players. Sign in to join the conversation.</p><div class="chat-panel"><div id="chatMessages" class="chat-messages" role="log" aria-label="Global chat messages" aria-live="polite"></div><p id="chatStatus" class="chat-status" role="status"></p><form id="chatForm" class="chat-form"><label class="sr-only" for="chatInput">Your message</label><input id="chatInput" name="message" type="text" maxlength="200" autocomplete="off" placeholder="Write a message to everyone..."><button id="chatSend" type="submit">Send</button></form><small class="chat-hint">One message every 3 seconds · 200 characters max</small></div></div>
         </div>
         <section class="owned-panel world-panel" aria-label="Owned generator world">
           <div class="owned-heading"><div><span class="eyebrow">THE ENGINE OF YOUR EMPIRE</span><h2>Your business world</h2></div><span id="ownedTotal" class="owned-total">0 owned</span></div>

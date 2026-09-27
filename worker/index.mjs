@@ -376,6 +376,31 @@ function fromHex(value){
   return Uint8Array.from(value.match(/../g),x=>parseInt(x,16));
 }
 async function sessionUser(request,env){return readSession(request,env);}
+async function getChat(env){
+  const rows=await env.DB.prepare(`SELECT c.id,c.body,c.created_at_ms,u.username
+    FROM chat_messages c JOIN users u ON u.id=c.user_id
+    LEFT JOIN moderation_state m ON m.user_id=c.user_id
+    WHERE u.username_set=1 AND (m.banned_at_ms IS NULL)
+    ORDER BY c.id DESC LIMIT 60`).all();
+  return json({messages:(rows.results||[]).reverse().map(row=>({
+    id:row.id,username:row.username,body:row.body,createdAtMs:row.created_at_ms
+  }))});
+}
+async function postChat(request,env,user){
+  if(!user||!user.username_set)fail(401,"Sign in and choose a username to chat.");
+  sameOrigin(request);
+  const data=await readBody(request,["message"],1024);
+  if(typeof data.message!=="string")fail(400,"Enter a message.");
+  const message=data.message.trim().replace(/\s+/g," ");
+  if(!message||[...message].length>200||/[\p{Cc}\p{Cf}]/u.test(message))fail(400,"Message must be 1–200 characters.");
+  const now=Date.now();
+  const result=await env.DB.prepare(`INSERT INTO chat_messages(user_id,body,created_at_ms)
+    SELECT ?,?,? WHERE NOT EXISTS (
+      SELECT 1 FROM chat_messages WHERE user_id=? AND created_at_ms>? LIMIT 1
+    )`).bind(user.id,message,now,user.id,now-3000).run();
+  if(!result.meta?.changes)fail(429,"Wait 3 seconds before sending another message.");
+  return json({ok:true},201);
+}
 async function hasDoubleMoney(env,userId){
   if(!userId)return false;
   const row=await env.DB.prepare(`SELECT 1 AS owned FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL
@@ -790,6 +815,8 @@ export default {
       const moderation=user?moderationMessage(await moderationFor(env,user.id)):null;
       if(moderation&&url.pathname!=="/api/leaderboard")fail(403,moderation.message+(moderation.expiresAtMs?" Until "+new Date(moderation.expiresAtMs).toISOString():""));
       if(url.pathname.startsWith("/api/admin/"))return await handleAdminRequest(request,env,user,{infrastructureLimit,rateLimit,hasDoubleMoney,premiumSlots,storeOwnership,loadProgress,advance,progressSummary,updateStatement});
+      if(url.pathname==="/api/chat"&&request.method==="GET")return await getChat(env);
+      if(url.pathname==="/api/chat"&&request.method==="POST")return await postChat(request,env,user);
       if(url.pathname==="/api/leaderboard"&&request.method==="GET")return await getLeaderboard(request,env,user);
       if(url.pathname==="/api/progress"&&request.method==="POST")
         fail(400,"Client-supplied cash, lifetime cash and rebirth totals are not accepted. Send server-validated actions.");
