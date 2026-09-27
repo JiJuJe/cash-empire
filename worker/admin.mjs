@@ -1,3 +1,6 @@
+import {BOOSTERS} from './boosters.mjs';
+import {CRATES} from './rewards.mjs';
+import {PRODUCTS,PRODUCT_BY_ID,COSMETIC_BY_ID} from './store-catalog.mjs';
 const ROLE_LEVEL={moderator:1,admin:2,owner:3};
 const ID=/^[A-Za-z0-9_-]{12,80}$/;
 const KINDS=new Set(["total","click","business","luck"]);
@@ -74,6 +77,12 @@ export async function handleAdminRequest(request,env,user,api){
   const level=roleLevel(role),now=Date.now();
   if(request.method==="GET"){
     if(path==="/api/admin/me")return json({role});
+    if(path==="/api/admin/catalog"&&level===3)return json({
+      crates:CRATES.map(({id,name})=>({id,name})),
+      boosters:BOOSTERS.map(({id,name,rarity})=>({id,name,rarity})),
+      cosmetics:[...COSMETIC_BY_ID.values()],
+      products:PRODUCTS.map(({id,name,category})=>({id,name,category}))
+    });
     if(path==="/api/admin/dashboard"){
       const row=await env.DB.prepare(`SELECT (SELECT count(*) FROM users) AS players,
         (SELECT count(*) FROM moderation_state WHERE banned_at_ms IS NOT NULL) AS banned,
@@ -102,7 +111,7 @@ export async function handleAdminRequest(request,env,user,api){
       let progress=null;
       if(row){const state=api.loadProgress(row);state.adminEffects=boosts;api.advance(state,now,entitlement);progress=api.progressSummary(state,entitlement);}
       const player=publicUser(target);player.lastSeenAtMs=Math.max(player.lastSeenAtMs||0,row?.last_accrual_ms||0)||null;
-      return json({player,progress,moderation:moderationMessage(moderation,now)||{status:"active"},boosts:active.map(publicBoost),paidEntitlements:{doubleMoney:entitlement,premiumSlots:slots}});
+      return json({player,progress,moderation:moderationMessage(moderation,now)||{status:"active"},boosts:active.map(publicBoost),paidEntitlements:{doubleMoney:entitlement,premiumSlots:slots,products:await api.storeOwnership(env,target.id)}});
     }
     if(path==="/api/admin/audit"){
       const auditFilter=level===3?"":"WHERE a.actor_user_id=?";
@@ -120,6 +129,8 @@ export async function handleAdminRequest(request,env,user,api){
   if(!body||!ID.test(body.actionId)||!ID.test(body.targetUserId)||typeof body.type!=="string")return error(400,"Invalid admin action.");
   const schemas={
     GRANT_MONEY:["actionId","targetUserId","type","amount","countTowardEarnings","reason"],
+    GRANT_ITEM:["actionId","targetUserId","type","itemType","itemId","quantity","reason"],
+    GRANT_PRODUCT:["actionId","targetUserId","type","productId","reason"],
     ADD_TEMP_BOOST:["actionId","targetUserId","type","kind","multiplier","durationMinutes","expiresAtMs","reason"],
     ADD_PERMANENT_BOOST:["actionId","targetUserId","type","kind","multiplier","reason"],
     REMOVE_BOOST:["actionId","targetUserId","type","boostId","reason"],
@@ -132,7 +143,7 @@ export async function handleAdminRequest(request,env,user,api){
     RESTORE_PROGRESS:["actionId","targetUserId","type","reason","typedConfirmation","finalConfirm"],
     SET_ROLE:["actionId","targetUserId","type","role","reason"]
   };
-  const required={GRANT_MONEY:2,ADD_TEMP_BOOST:2,ADD_PERMANENT_BOOST:3,REMOVE_BOOST:2,TIMEOUT:1,REMOVE_TIMEOUT:1,BAN:2,UNBAN:2,MODERATE_USERNAME:1,RESET_PROGRESS:3,RESTORE_PROGRESS:3,SET_ROLE:3};
+  const required={GRANT_MONEY:2,GRANT_ITEM:3,GRANT_PRODUCT:3,ADD_TEMP_BOOST:2,ADD_PERMANENT_BOOST:3,REMOVE_BOOST:2,TIMEOUT:1,REMOVE_TIMEOUT:1,BAN:2,UNBAN:2,MODERATE_USERNAME:1,RESET_PROGRESS:3,RESTORE_PROGRESS:3,SET_ROLE:3};
   if(!schemas[body.type]||!exact(body,schemas[body.type])||level<required[body.type])return error(403,"Action not permitted.");
   const reason=safeReason(body.reason);
   if(!reason)return error(400,"A reason of 3–300 characters is required.");
@@ -156,6 +167,45 @@ export async function handleAdminRequest(request,env,user,api){
       if(body.countTowardEarnings){current.lifetime+=body.amount;current.runEarned+=body.amount;}
       const result=await env.DB.batch([api.updateStatement(env,current,row.version,entitled),audit({amount:body.amount,countTowardEarnings:body.countTowardEarnings},"changes()=1")]);
       if(result[0].meta?.changes!==1)return error(409,"Progress changed. Retry with a new action ID.");
+    }else if(body.type==="GRANT_ITEM"||body.type==="GRANT_PRODUCT"&&typeof body.productId==='string'&&body.productId.startsWith('crate_')){
+      const itemType=body.type==="GRANT_PRODUCT"?'crate':body.itemType;
+      const itemId=body.type==="GRANT_PRODUCT"?body.productId.slice(6):body.itemId;
+      const quantity=body.type==="GRANT_PRODUCT"?1:body.quantity;
+      if(!['crate','booster','cosmetic','diamonds'].includes(itemType)||
+        !Number.isSafeInteger(quantity)||quantity<1||quantity>(itemType==='diamonds'?1000000000:100)||
+        itemType==='crate'&&!CRATES.some(item=>item.id===itemId)||
+        itemType==='booster'&&!BOOSTERS.some(item=>item.id===itemId)||
+        itemType==='cosmetic'&&(!COSMETIC_BY_ID.has(itemId)||quantity!==1)||
+        itemType==='diamonds'&&itemId!=='diamonds')return error(400,"Invalid item grant.");
+      const row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(target.id).first();
+      if(!row)return error(409,"Player has no cloud progress yet.");
+      const current=api.loadProgress(row),entitled=await api.hasDoubleMoney(env,target.id);
+      current.adminEffects=await adminBoosts(env,target.id,current.lastAccrualMs);api.advance(current,now,entitled);
+      if(itemType==='crate'){
+        if((current.crateInventory[itemId]||0)+quantity>1000000)return error(400,"Crate inventory limit reached.");
+        current.crateInventory[itemId]=(current.crateInventory[itemId]||0)+quantity;
+      }else if(itemType==='booster'){
+        if((current.boosterInventory[itemId]||0)+quantity>1000000)return error(400,"Booster inventory limit reached.");
+        current.boosterInventory[itemId]=(current.boosterInventory[itemId]||0)+quantity;
+      }else if(itemType==='cosmetic'){
+        if(current.rewardCosmetics.includes(itemId))return error(409,"Cosmetic already owned.");
+        current.rewardCosmetics.push(itemId);
+      }else{
+        if(current.diamonds+quantity>1000000000)return error(400,"Diamond limit reached.");
+        current.diamonds+=quantity;
+      }
+      const result=await env.DB.batch([api.updateStatement(env,current,row.version,entitled),audit({itemType,itemId,quantity},"changes()=1")]);
+      if(result[0].meta?.changes!==1)return error(409,"Progress changed. Retry with a new action ID.");
+    }else if(body.type==="GRANT_PRODUCT"){
+      const product=PRODUCT_BY_ID.get(body.productId);
+      if(!product||product.repeatable)return error(400,"Invalid store product.");
+      if((await api.storeOwnership(env,target.id))[product.id])return error(409,"Store product already owned.");
+      const statements=[env.DB.prepare("INSERT INTO admin_product_entitlements(user_id,product_id,grant_id,granted_at_ms) VALUES(?,?,?,?) ON CONFLICT(user_id,product_id) DO NOTHING")
+        .bind(target.id,product.id,body.actionId,now),audit({productId:product.id},"changes()=1")];
+      if(product.id==='double_money')statements.push(env.DB.prepare(`UPDATE progress SET rate_per_second=MIN(1e300,rate_per_second*2),version=version+1
+        WHERE user_id=? AND EXISTS(SELECT 1 FROM admin_product_entitlements WHERE user_id=? AND grant_id=?)`).bind(target.id,target.id,body.actionId));
+      const result=await env.DB.batch(statements);
+      if(result[0].meta?.changes!==1)return error(409,"Store product already owned.");
     }else if(body.type==="RESET_PROGRESS"){
       if(body.typedConfirmation!=="RESET "+target.username||body.finalConfirm!==true)return error(400,"Reset confirmation does not match.");
       const row=await env.DB.prepare("SELECT * FROM progress WHERE user_id=?").bind(target.id).first();if(!row)return error(409,"Player has no cloud progress.");

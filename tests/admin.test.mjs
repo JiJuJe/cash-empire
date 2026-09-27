@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {DatabaseSync} from 'node:sqlite';import worker,{testing} from '../worker/index.mjs';
 const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}}}},async batch(statements){db.exec('BEGIN');try{const results=statements.map(s=>({meta:{changes:db.prepare(s.sql).run(...s.args).changes}}));db.exec('COMMIT');return results}catch(e){db.exec('ROLLBACK');throw e}}};}
-async function setup(){const db=new DatabaseSync(':memory:');for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+async function setup(){const db=new DatabaseSync(':memory:');for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql','0015_admin_product_entitlements.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
 const now=Date.now(),ids={owner:'owner-user-000001',admin:'admin-user-000001',moderator:'moderator-000001',player:'player-user-000001',other:'other-user-000001'};const cookies={};
 for(const [name,id] of Object.entries(ids)){db.prepare('INSERT INTO users(id,username,created_at_ms,username_normalized,username_set,last_seen_at_ms) VALUES(?,?,?,?,1,?)').run(id,name,now-86400000,name,now);db.prepare('INSERT INTO progress(user_id,balance,lifetime_cash,run_earned,last_accrual_ms,total_clicks) VALUES(?,?,?,?,?,?)').run(id,100,500,500,now,10);const token=(name+'-'.repeat(60)).slice(0,48),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,id,now,now+86400000);cookies[name]='__Host-ce_session='+token;}
 for(const name of ['owner','admin','moderator'])db.prepare('INSERT INTO admin_users(user_id,role,created_at_ms) VALUES(?,?,?)').run(ids[name],name,now);
@@ -23,3 +23,47 @@ x.db.prepare('INSERT INTO moderation_state(user_id,suspended_until_ms,updated_at
 });
 test('custom expiry, luck, and permanent boosts remain server-side through Rebirth',async()=>{const x=await setup(),now=Date.now();assert.equal((await x.act('admin','ADD_TEMP_BOOST',{kind:'luck',multiplier:2,expiresAtMs:now+60000})).status,200);assert.equal((await x.act('admin','ADD_TEMP_BOOST',{kind:'luck',multiplier:2,expiresAtMs:now-1})).status,400);assert.equal((await x.act('owner','ADD_PERMANENT_BOOST',{kind:'total',multiplier:3})).status,200);const state=testing.loadProgress(x.db.prepare('SELECT * FROM progress WHERE user_id=?').get(x.ids.player));state.adminEffects=await (await import('../worker/admin.mjs')).adminBoosts(x.env,x.ids.player,0);state.totalPlaytimeMs=600000;state.nextDropPlaytimeMs=600000;const activeAt=Date.now();testing.heartbeatState(state,activeAt,true,()=>.1);assert.ok(state.pendingDropUntilMs>activeAt);
 x.db.prepare('UPDATE progress SET run_earned=1000000,lifetime_cash=1000000 WHERE user_id=?').run(x.ids.player);const rebirth=await worker.fetch(new Request(origin+'/api/progress/action',{method:'POST',headers:{Cookie:x.cookies.player,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({actionId:crypto.randomUUID(),type:'rebirth',generation:0})}),x.env);assert.equal(rebirth.status,200);const result=await rebirth.json();assert.equal(result.rebirths,1);assert.equal(result.adminBoosts.some(b=>b.kind==='total'&&b.multiplier===3),true);assert.equal(x.db.prepare("SELECT count(*) n FROM admin_boosts WHERE user_id=? AND expires_at_ms IS NULL").get(x.ids.player).n,1);});
+test('owner can grant crates, boosters, cosmetics and diamonds without touching earned stats',async()=>{
+  const x=await setup();
+  const catalog=await (await x.get('owner','/api/admin/catalog')).json();
+  assert.ok(catalog.crates.some(item=>item.id==='royal'));
+  assert.equal((await x.get('admin','/api/admin/catalog')).status,404);
+  const original=x.db.prepare('SELECT lifetime_cash,rebirths FROM progress WHERE user_id=?').get(x.ids.player);
+  const crateId=crypto.randomUUID();
+  assert.equal((await x.act('admin','GRANT_ITEM',{itemType:'crate',itemId:'royal',quantity:2})).status,403);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'crate',itemId:'royal',quantity:2},crateId)).status,200);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'crate',itemId:'royal',quantity:2},crateId)).status,200);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'booster',itemId:'moneyKing',quantity:3})).status,200);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'cosmetic',itemId:'emerald_pile',quantity:1})).status,200);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'diamonds',itemId:'diamonds',quantity:50})).status,200);
+  assert.equal((await x.act('owner','GRANT_ITEM',{itemType:'crate',itemId:'fake',quantity:2})).status,400);
+  const row=x.db.prepare('SELECT * FROM progress WHERE user_id=?').get(x.ids.player);
+  assert.equal(JSON.parse(row.crate_inventory_json).royal,2);
+  assert.equal(JSON.parse(row.booster_inventory_json).moneyKing,3);
+  assert.deepEqual(JSON.parse(row.reward_cosmetics_json),['emerald_pile']);
+  assert.equal(row.diamonds,50);
+  assert.deepEqual([row.lifetime_cash,row.rebirths],[original.lifetime_cash,original.rebirths]);
+  assert.equal((await x.get('player','/api/cosmetics')).status,200);
+});
+test('owner gifted game passes and paid cosmetics are durable without fake Stripe purchases',async()=>{
+  const x=await setup();
+  assert.equal((await x.act('admin','GRANT_PRODUCT',{productId:'double_money'})).status,403);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'double_money'})).status,200);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'booster_slot_5'})).status,200);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'luxury_vault_theme'})).status,200);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'crate_royal'})).status,200);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'double_money'})).status,409);
+  assert.equal((await x.act('owner','GRANT_PRODUCT',{productId:'unknown'})).status,400);
+  assert.equal(x.db.prepare('SELECT COUNT(*) n FROM store_purchases').get().n,0);
+  const gifted=x.db.prepare('SELECT product_id FROM admin_product_entitlements WHERE user_id=?').all(x.ids.player).map(row=>row.product_id);
+  assert.deepEqual(gifted.sort(),['booster_slot_5','double_money','luxury_vault_theme']);
+  const store=await (await x.get('player','/api/store/status')).json();
+  assert.equal(store.entitlements.double_money,true);
+  assert.equal(store.entitlements.booster_slot_5,true);
+  assert.equal(store.entitlements.luxury_vault_theme,true);
+  const cosmetics=await (await x.get('player','/api/cosmetics')).json();
+  assert.ok(cosmetics.owned.includes('luxury_pile'));
+  const snapshot=await (await x.get('player','/api/progress/snapshot')).json();
+  assert.equal(snapshot.crateInventory.royal,1);
+  assert.ok(snapshot.premiumBoosterSlots.includes(5));
+});

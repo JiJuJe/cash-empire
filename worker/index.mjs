@@ -378,12 +378,13 @@ function fromHex(value){
 async function sessionUser(request,env){return readSession(request,env);}
 async function hasDoubleMoney(env,userId){
   if(!userId)return false;
-  const row=await env.DB.prepare("SELECT 1 AS owned FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL").bind(userId).first();
+  const row=await env.DB.prepare(`SELECT 1 AS owned FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL
+    UNION SELECT 1 FROM admin_product_entitlements WHERE user_id=? AND product_id='double_money' LIMIT 1`).bind(userId,userId).first();
   return Boolean(row);
 }
 async function storeOwnership(env,userId){
   if(!userId)return {};
-  const rows=await env.DB.prepare("SELECT product_id FROM store_entitlements WHERE user_id=?").bind(userId).all();
+  const rows=await env.DB.prepare("SELECT product_id FROM store_entitlements WHERE user_id=? UNION SELECT product_id FROM admin_product_entitlements WHERE user_id=?").bind(userId,userId).all();
   const owned=Object.fromEntries((rows.results||[]).map(row=>[row.product_id,true]));
   if(await hasDoubleMoney(env,userId))owned.double_money=true;
   for(const slot of await premiumSlots(env,userId))owned['booster_slot_'+slot]=true;
@@ -391,12 +392,14 @@ async function storeOwnership(env,userId){
 }
 async function cosmeticsInventory(env,userId){
   if(!userId)return {owned:[],loadout:{}};
-  const [owned,equipped,rewarded]=await Promise.all([
+  const [owned,equipped,rewarded,adminProducts]=await Promise.all([
     env.DB.prepare("SELECT cosmetic_id FROM cosmetic_entitlements WHERE user_id=?").bind(userId).all(),
     env.DB.prepare("SELECT slot,cosmetic_id FROM cosmetic_loadout WHERE user_id=?").bind(userId).all(),
-    env.DB.prepare("SELECT reward_cosmetics_json FROM progress WHERE user_id=?").bind(userId).first()
+    env.DB.prepare("SELECT reward_cosmetics_json FROM progress WHERE user_id=?").bind(userId).first(),
+    env.DB.prepare("SELECT product_id FROM admin_product_entitlements WHERE user_id=?").bind(userId).all()
   ]);
-  return {owned:[...new Set([...(owned.results||[]).map(row=>row.cosmetic_id),...decodeJson(rewarded?.reward_cosmetics_json||"[]",[])])],loadout:Object.fromEntries((equipped.results||[]).map(row=>[row.slot,row.cosmetic_id]))};
+  const giftedCosmetics=(adminProducts.results||[]).flatMap(row=>Object.values(PRODUCT_BY_ID.get(row.product_id)?.cosmetics||{}));
+  return {owned:[...new Set([...(owned.results||[]).map(row=>row.cosmetic_id),...giftedCosmetics,...decodeJson(rewarded?.reward_cosmetics_json||"[]",[])])],loadout:Object.fromEntries((equipped.results||[]).map(row=>[row.slot,row.cosmetic_id]))};
 }
 async function equipCosmetic(request,env,user){
   if(!user||!user.username_set)fail(401,"Choose a username first.");
@@ -478,7 +481,9 @@ function updateStatement(env,s,oldVersion,entitled){
     );
 }
 async function premiumSlots(env,userId){
-  const rows=await env.DB.prepare("SELECT slot_number FROM booster_slot_entitlements WHERE user_id=?").bind(userId).all();
+  const rows=await env.DB.prepare(`SELECT slot_number FROM booster_slot_entitlements WHERE user_id=?
+    UNION SELECT 5 FROM admin_product_entitlements WHERE user_id=? AND product_id='booster_slot_5'
+    UNION SELECT 6 FROM admin_product_entitlements WHERE user_id=? AND product_id='booster_slot_6'`).bind(userId,userId,userId).all();
   return (rows.results||[]).map(row=>Number(row.slot_number)).filter(slot=>slot===5||slot===6);
 }
 function initialProgress(userId,now){
@@ -624,6 +629,7 @@ function paymentsConfigured(env){
 }
 async function storeStatus(request,env,user){
   if(env.DB)await infrastructureLimit(env,request,"store-status:"+(user?.id||"guest"));
+  if(user)try{await reconcilePendingPurchases(env,user.id,8);}catch(error){console.error("Payment reconciliation failed",error);}
   const entitlements=env.DB?await storeOwnership(env,user?.id):{};
   return json({authenticated:Boolean(user),paymentsAvailable:paymentsConfigured(env),entitlements,catalog:publicCatalog()});
 }
@@ -635,6 +641,7 @@ async function beginCheckout(request,env,user){
   const body=await readBody(request,["productId"]);
   const product=PRODUCT_BY_ID.get(body.productId);
   if(!product)fail(400,"Unknown product.");
+  try{await reconcilePendingPurchases(env,user.id,8);}catch(error){console.error("Payment reconciliation failed",error);}
   if(!product.repeatable&&(await storeOwnership(env,user.id))[product.id])fail(409,"Already owned.");
   const pending=await env.DB.prepare("SELECT checkout_url,created_at_ms FROM store_purchases WHERE user_id=? AND product_id=? AND status='pending' ORDER BY created_at_ms DESC LIMIT 1")
     .bind(user.id,product.id).first();
@@ -679,38 +686,28 @@ async function verifyStripeSignature(raw,header,secret){
   const expected=await hmac(secret,timestamp+"."+raw);
   return signatures.some(signature=>constantEqual(signature,expected));
 }
-async function stripeWebhook(request,env){
-  if(!paymentsConfigured(env))fail(503,"Payments are not available yet.");
-  const raw=await request.text();
-  if(!await verifyStripeSignature(raw,request.headers.get("Stripe-Signature"),env.STRIPE_WEBHOOK_SECRET))
-    fail(400,"Invalid webhook signature.");
-  let event;
-  try{event=JSON.parse(raw);}catch(_){fail(400,"Malformed webhook.");}
-  if(typeof event.id!=="string"||!/^evt_[A-Za-z0-9]+$/.test(event.id))fail(400,"Invalid event.");
-  const session=event.data?.object;
-  if(!["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(event.type))
-    return json({received:true});
-  if(!session||session.payment_status!=="paid")return json({received:true});
+async function fulfillPaidSession(env,session,eventId=null){
+  if(!session||session.payment_status!=="paid")return false;
   const product=PRODUCT_BY_ID.get(session.metadata?.product_id);
   if(session.mode!=="payment"||session.currency!=="eur"||!product||session.amount_total!==product.priceCents||
      typeof session.id!=="string"||typeof session.client_reference_id!=="string")fail(400,"Invalid paid session.");
   let purchase=await env.DB.prepare("SELECT id,user_id,product_id,amount_cents,status FROM store_purchases WHERE provider_session_id=? AND user_id=?")
     .bind(session.id,session.client_reference_id).first();
   const modern=Boolean(purchase);
-  if(!purchase&&product.id==="double_money")purchase=await env.DB.prepare("SELECT id,user_id,product_id,amount_cents FROM purchases WHERE provider_session_id=? AND user_id=?")
+  if(!purchase&&product.id==="double_money")purchase=await env.DB.prepare("SELECT id,user_id,product_id,amount_cents,status FROM purchases WHERE provider_session_id=? AND user_id=?")
     .bind(session.id,session.client_reference_id).first();
   if(!purchase||purchase.product_id!==product.id||purchase.amount_cents!==product.priceCents||session.metadata?.purchase_id!==purchase.id||
      (modern&&session.metadata?.user_id!==purchase.user_id))fail(400,"Unknown checkout.");
-  if(product.repeatable&&purchase.status==="paid")return json({received:true});
+  if(purchase.status==="paid")return false;
   if(product.id==="double_money"){
     const legacy=await env.DB.prepare("SELECT 1 AS found FROM purchases WHERE id=? AND provider_session_id=? AND user_id=?").bind(purchase.id,session.id,purchase.user_id).first();
     if(!legacy)fail(409,"Checkout is still being prepared.");
   }
-  const seen=await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(event.id).first();
-  if(seen)return json({received:true});
+  if(eventId&&await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(eventId).first())return false;
   const now=Date.now();
   await ensureProgress(env,purchase.user_id,now);
-  const statements=[env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(event.id,now)];
+  const statements=[];
+  if(eventId)statements.push(env.DB.prepare("INSERT INTO payment_events(provider_event_id,received_at_ms) VALUES(?,?)").bind(eventId,now));
   if(product.repeatable){
     const crateId=product.id.slice(6);
     statements.push(env.DB.prepare(`UPDATE progress SET crate_inventory_json=json_set(crate_inventory_json,?,COALESCE(json_extract(crate_inventory_json,?),0)+1),version=version+1
@@ -725,8 +722,9 @@ async function stripeWebhook(request,env){
         lifetime_cash=MIN(1e300,lifetime_cash+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         run_earned=MIN(1e300,run_earned+rate_per_second*MIN(MAX((?-last_accrual_ms)/1000.0,0),offline_cap_seconds)*offline_efficiency),
         last_accrual_ms=?,rate_per_second=MIN(1e300,rate_per_second*2),version=version+1
-        WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL)`)
-        .bind(now,now,now,now,purchase.user_id,purchase.user_id));
+        WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM entitlements WHERE user_id=? AND entitlement='double_money' AND revoked_at_ms IS NULL)
+        AND NOT EXISTS(SELECT 1 FROM admin_product_entitlements WHERE user_id=? AND product_id='double_money')`)
+        .bind(now,now,now,now,purchase.user_id,purchase.user_id,purchase.user_id));
     statements.push(env.DB.prepare(`INSERT INTO entitlements(user_id,entitlement,source_purchase_id,granted_at_ms)
       VALUES(?,'double_money',?,?) ON CONFLICT(user_id,entitlement) DO NOTHING`).bind(purchase.user_id,purchase.id,now));
   }else if(!product.repeatable){
@@ -740,13 +738,41 @@ async function stripeWebhook(request,env){
   try {
     await env.DB.batch(statements);
   } catch(error) {
-    const duplicate=await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(event.id).first();
+    const duplicate=eventId&&await env.DB.prepare("SELECT 1 AS seen FROM payment_events WHERE provider_event_id=?").bind(eventId).first();
     if(!duplicate)throw error;
   }
+  return true;
+}
+async function stripeWebhook(request,env){
+  if(!paymentsConfigured(env))fail(503,"Payments are not available yet.");
+  const raw=await request.text();
+  if(!await verifyStripeSignature(raw,request.headers.get("Stripe-Signature"),env.STRIPE_WEBHOOK_SECRET))
+    fail(400,"Invalid webhook signature.");
+  let event;
+  try{event=JSON.parse(raw);}catch(_){fail(400,"Malformed webhook.");}
+  if(typeof event.id!=="string"||!/^evt_[A-Za-z0-9]+$/.test(event.id))fail(400,"Invalid event.");
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(event.type))return json({received:true});
+  await fulfillPaidSession(env,event.data?.object,event.id);
   return json({received:true});
+}
+async function reconcilePendingPurchases(env,userId=null,limit=25){
+  if(!env.DB||!env.STRIPE_SECRET_KEY)return;
+  const rows=await env.DB.prepare(`SELECT provider_session_id FROM store_purchases
+    WHERE status='pending' AND provider_session_id IS NOT NULL AND created_at_ms>?
+    ${userId?'AND user_id=?':''} ORDER BY created_at_ms DESC LIMIT ?`)
+    .bind(Date.now()-7*86400000,...(userId?[userId]:[]),limit).all();
+  for(const row of rows.results||[]){
+    try{
+      const response=await fetch('https://api.stripe.com/v1/checkout/sessions/'+encodeURIComponent(row.provider_session_id),
+        {headers:{Authorization:'Bearer '+env.STRIPE_SECRET_KEY}});
+      if(!response.ok)throw Error('Stripe session lookup failed: '+response.status);
+      await fulfillPaidSession(env,await response.json());
+    }catch(error){console.error('Pending checkout reconciliation failed',error);}
+  }
 }
 export {sanitizeUsername};
 export default {
+  async scheduled(_controller,env,ctx){ctx.waitUntil(reconcilePendingPurchases(env));},
   async fetch(request,env){
     const url=new URL(request.url);
     if(!url.pathname.startsWith("/api/"))return env.ASSETS?env.ASSETS.fetch(request):new Response("Not found",{status:404});
@@ -763,7 +789,7 @@ export default {
       const user=await sessionUser(request,env);
       const moderation=user?moderationMessage(await moderationFor(env,user.id)):null;
       if(moderation&&url.pathname!=="/api/leaderboard")fail(403,moderation.message+(moderation.expiresAtMs?" Until "+new Date(moderation.expiresAtMs).toISOString():""));
-      if(url.pathname.startsWith("/api/admin/"))return await handleAdminRequest(request,env,user,{infrastructureLimit,rateLimit,hasDoubleMoney,premiumSlots,loadProgress,advance,progressSummary,updateStatement});
+      if(url.pathname.startsWith("/api/admin/"))return await handleAdminRequest(request,env,user,{infrastructureLimit,rateLimit,hasDoubleMoney,premiumSlots,storeOwnership,loadProgress,advance,progressSummary,updateStatement});
       if(url.pathname==="/api/leaderboard"&&request.method==="GET")return await getLeaderboard(request,env,user);
       if(url.pathname==="/api/progress"&&request.method==="POST")
         fail(400,"Client-supplied cash, lifetime cash and rebirth totals are not accepted. Send server-validated actions.");

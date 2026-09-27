@@ -9,7 +9,7 @@ const origin='https://clickthecash.online';
 function d1(db){return {prepare(sql){let args=[];return {sql,get args(){return args},bind(...v){args=v;return this},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:r.changes}}},async first(){return db.prepare(sql).get(...args)||null},async all(){return {results:db.prepare(sql).all(...args)}}}},async batch(stmts){db.exec('BEGIN');try{const result=stmts.map(s=>({meta:{changes:db.prepare(s.sql).run(...s.args).changes}}));db.exec('COMMIT');return result}catch(e){db.exec('ROLLBACK');throw e}}};}
 async function setup(){
   const db=new DatabaseSync(':memory:');
-  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['0001_leaderboard_store.sql','0002_google_accounts.sql','0003_playtime_boosters.sql','0004_cloud_click_streams.sql','0005_admin_moderation.sql','0006_store_cosmetics_bills.sql','0009_achievement_crates.sql','0010_free_crates.sql','0011_diamonds.sql','0012_business_revenue.sql','0015_admin_product_entitlements.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   db.prepare("INSERT INTO users(id,username,created_at_ms,username_normalized,username_set) VALUES('u','Buyer',1,'buyer',1)").run();
   const token='S'.repeat(43),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
   db.prepare('INSERT INTO sessions(token_hash,user_id,created_at_ms,expires_at_ms) VALUES(?,?,?,?)').run(hash,'u',Date.now(),Date.now()+3600000);
@@ -19,15 +19,27 @@ async function setup(){
   const get=path=>worker.fetch(new Request(origin+path,{headers:{Cookie:headers.Cookie}}),env);
   const post=(path,body)=>worker.fetch(new Request(origin+path,{method:'POST',headers,body:JSON.stringify(body)}),env);
   let stripeCount=0;
+  const stripeSessions=new Map();
   const originalFetch=globalThis.fetch;
-  globalThis.fetch=async(url,options)=>{if(String(url)!=='https://api.stripe.com/v1/checkout/sessions')return originalFetch(url,options);stripeCount++;return Response.json({id:'cs_test_'+stripeCount,url:'https://checkout.stripe.com/c/pay/test_'+stripeCount});};
+  globalThis.fetch=async(url,options)=>{
+    const address=String(url);
+    if(address==='https://api.stripe.com/v1/checkout/sessions'){
+      stripeCount++;return Response.json({id:'cs_test_'+stripeCount,url:'https://checkout.stripe.com/c/pay/test_'+stripeCount});
+    }
+    if(address.startsWith('https://api.stripe.com/v1/checkout/sessions/'))return Response.json(stripeSessions.get(address.split('/').at(-1))||{payment_status:'unpaid'});
+    return originalFetch(url,options);
+  };
   const webhook=async(product,purchase,eventId='evt_test123',overrides={})=>{
     const session={id:purchase.provider_session_id,client_reference_id:'u',payment_status:'paid',mode:'payment',currency:'eur',amount_total:product.priceCents,metadata:{product_id:product.id,purchase_id:purchase.id,user_id:'u'},...overrides};
     const raw=JSON.stringify({id:eventId,type:'checkout.session.completed',data:{object:session}});
     const timestamp=Math.floor(Date.now()/1000),signature=createHmac('sha256',env.STRIPE_WEBHOOK_SECRET).update(timestamp+'.'+raw).digest('hex');
     return worker.fetch(new Request(origin+'/api/store/webhook',{method:'POST',headers:{'Stripe-Signature':`t=${timestamp},v1=${signature}`},body:raw}),env);
   };
-  return {db,env,get,post,webhook,close(){globalThis.fetch=originalFetch;db.close()}};
+  const setStripeSession=(product,purchase,paymentStatus='paid')=>stripeSessions.set(purchase.provider_session_id,{
+    id:purchase.provider_session_id,client_reference_id:'u',payment_status:paymentStatus,mode:'payment',currency:'eur',amount_total:product.priceCents,
+    metadata:{product_id:product.id,purchase_id:purchase.id,user_id:'u'}
+  });
+  return {db,env,get,post,webhook,setStripeSession,close(){globalThis.fetch=originalFetch;db.close()}};
 }
 test('all catalog prices are server selected and unknown products are rejected',async()=>{
   const x=await setup();try{
@@ -132,6 +144,36 @@ test('paid repeatable crate is granted once per verified checkout and may be bou
     assert.notEqual(first.id,second.id);
     assert.equal((await x.webhook(product,second,'evt_cratesecond')).status,200);
     assert.equal(JSON.parse(x.db.prepare("SELECT crate_inventory_json FROM progress WHERE user_id='u'").get().crate_inventory_json).wood,2);
+  }finally{x.close()}
+});
+test('a paid Royal Crate with a missed webhook is reconciled exactly once from Stripe',async()=>{
+  const x=await setup();try{
+    const product=PRODUCTS.find(p=>p.id==='crate_royal');
+    assert.equal((await x.post('/api/store/checkout',{productId:product.id})).status,200);
+    const purchase=x.db.prepare("SELECT * FROM store_purchases WHERE product_id='crate_royal'").get();
+    x.setStripeSession(product,purchase,'unpaid');
+    assert.equal((await x.get('/api/store/status')).status,200);
+    assert.equal(x.db.prepare('SELECT status FROM store_purchases WHERE id=?').get(purchase.id).status,'pending');
+    x.setStripeSession(product,purchase,'paid');
+    assert.equal((await x.get('/api/store/status')).status,200);
+    assert.equal(x.db.prepare('SELECT status FROM store_purchases WHERE id=?').get(purchase.id).status,'paid');
+    assert.equal(JSON.parse(x.db.prepare("SELECT crate_inventory_json FROM progress WHERE user_id='u'").get().crate_inventory_json).royal,1);
+    assert.equal((await x.get('/api/store/status')).status,200);
+    assert.equal((await x.webhook(product,purchase,'evt_laterroyal')).status,200);
+    assert.equal(JSON.parse(x.db.prepare("SELECT crate_inventory_json FROM progress WHERE user_id='u'").get().crate_inventory_json).royal,1);
+  }finally{x.close()}
+});
+test('scheduled payment recovery delivers a paid crate even if its buyer does not reopen the game',async()=>{
+  const x=await setup();try{
+    const product=PRODUCTS.find(p=>p.id==='crate_royal');
+    assert.equal((await x.post('/api/store/checkout',{productId:product.id})).status,200);
+    const purchase=x.db.prepare("SELECT * FROM store_purchases WHERE product_id='crate_royal'").get();
+    x.setStripeSession(product,purchase,'paid');
+    let work;
+    await worker.scheduled({},x.env,{waitUntil(promise){work=promise;}});
+    await work;
+    assert.equal(x.db.prepare('SELECT status FROM store_purchases WHERE id=?').get(purchase.id).status,'paid');
+    assert.equal(JSON.parse(x.db.prepare("SELECT crate_inventory_json FROM progress WHERE user_id='u'").get().crate_inventory_json).royal,1);
   }finally{x.close()}
 });
 test('paid cosmetic purchase follows the account, equips securely, and webhook replay grants once',async()=>{
