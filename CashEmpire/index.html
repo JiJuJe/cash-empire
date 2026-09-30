@@ -15,13 +15,16 @@
   <link rel="stylesheet" href="style.css?v=world-balance-1">
   <link rel="stylesheet" href="v2.css?v=1">
   <link rel="stylesheet" href="crates.css?v=3">
-  <link rel="stylesheet" href="cosmetic-v2.css?v=2">
+  <link rel="stylesheet" href="cosmetic-v2.css?v=coin-1">
+  <link rel="stylesheet" href="coin-skins.css?v=1">
+  <link rel="preload" as="image" href="assets/coins/base-coin.png">
   <link rel="stylesheet" href="chat.css?v=2">
   <link rel="stylesheet" href="quests.css?v=1">
   <script src="cloud-outbox.js?v=quests-1" defer></script>
   <script src="wealth-progression.js?v=empire-2" defer></script>
   <script src="v2-shell.js?v=2" defer></script>
-  <script src="script.js?v=quests-1" defer></script>
+  <script src="coin-skins.js?v=1" defer></script>
+  <script src="script.js?v=coin-1" defer></script>
   <script src="chat.js?v=2" defer></script>
 </head>
 <body>
@@ -35,7 +38,7 @@
         <div id="pileZone" class="pile-zone">
           <div id="particleLayer" class="particle-layer" aria-hidden="true"></div>
           <div class="wealth-backdrop" aria-hidden="true"></div>
-          <button id="moneyPile" class="money-pile wealth-0" type="button" aria-label="Collect cash from the wealth pile"></button>
+          <button id="moneyPile" class="money-pile wealth-0" type="button" aria-label="Collect cash from the coin"></button>
           <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
           <button id="goldenBill" class="golden-bill" type="button" hidden aria-label="Claim Golden Bill"><img id="goldenBillArt" src="assets/bills/golden-bill.png" alt="" width="116" height="96" decoding="async"><span class="golden-fallback" aria-hidden="true">GOLDEN BILL</span><b id="goldenCountdown" class="event-countdown" aria-label="Seconds remaining">12</b></button><button id="boosterDrop" class="booster-drop" type="button" hidden aria-label="Claim Booster Drop"><span>◆</span><small>BOOSTER DROP</small><b id="dropCountdown" class="event-countdown">20</b></button><div id="burstLayer" class="burst-layer" aria-hidden="true"></div>
         </div>

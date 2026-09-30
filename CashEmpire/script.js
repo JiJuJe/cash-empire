@@ -79,9 +79,9 @@
     ["infiniteSponsor","Infinite Sponsor","mythic","business",.75,"+75% business earnings"]
   ].map(([id,name,rarity,effect,value,description])=>({id,name,rarity,effect,value,description}));
   const CRATES=[
-    {id:"wood",name:"Wood Crate",diamondPrice:100,priceCents:50,weights:{cash:55,booster:30,cosmetic:12,crate:3},cashRange:[5000,40000],boosterRarities:["common","rare"],cosmetics:["Emerald pile","Emerald click","Neon click"],nextCrate:"Iron Crate"},
-    {id:"iron",name:"Iron Crate",diamondPrice:300,priceCents:100,weights:{cash:35,booster:40,cosmetic:20,crate:5},cashRange:[200000,4000000],boosterRarities:["rare","epic","legendary"],cosmetics:["Diamond pile","Diamond click","Black & Gold cards","Vault background"],nextCrate:"Royal Crate"},
-    {id:"royal",name:"Royal Crate",diamondPrice:1000,priceCents:300,weights:{cash:20,booster:40,cosmetic:32,crate:8},cashRange:[10000000,180000000],boosterRarities:["epic","legendary","mythic"],cosmetics:["Pink Diamond pile","Obsidian pile","Cosmic pile","Luxury cards"],nextCrate:"Royal Crate"}
+    {id:"wood",name:"Wood Crate",diamondPrice:100,priceCents:50,weights:{cash:55,booster:30,cosmetic:12,crate:3},cashRange:[5000,40000],boosterRarities:["common","rare"],cosmetics:["Emerald Coin Skin","Emerald click","Neon click"],nextCrate:"Iron Crate"},
+    {id:"iron",name:"Iron Crate",diamondPrice:300,priceCents:100,weights:{cash:35,booster:40,cosmetic:20,crate:5},cashRange:[200000,4000000],boosterRarities:["rare","epic","legendary"],cosmetics:["Diamond Coin Skin","Diamond click","Black & Gold cards","Vault background"],nextCrate:"Royal Crate"},
+    {id:"royal",name:"Royal Crate",diamondPrice:1000,priceCents:300,weights:{cash:20,booster:40,cosmetic:32,crate:8},cashRange:[10000000,180000000],boosterRarities:["epic","legendary","mythic"],cosmetics:["Pink Diamond Coin Skin","Obsidian Coin Skin","Cosmic Coin Skin","Luxury cards"],nextCrate:"Royal Crate"}
   ];
   const SLOT_PRICES={2:10000000,3:1000000000,4:100000000000};
   const DROP_INTERVAL_MS=600000;
@@ -330,7 +330,7 @@
     [1000000000,"Billionaire"],[1000000000000,"Trillionaire"],[1e15,"Quadrillionaire"],
     [1e18,"Quintillionaire"],[1e21,"Sextillionaire"]
   ].forEach(([n,name]) => achievement("earn-"+n,name,"Earn "+euro(n)+" total","💵",s=>s.lifetime>=n));
-  [1,10,100,1000,10000,100000].forEach((n,i) => achievement("click-"+n,["First Tap","Cash Habit","Busy Hands","Click Addict","Tap Tycoon","Human Machine"][i],"Click the pile "+format(n)+" times","👆",s=>s.totalClicks>=n));
+  [1,10,100,1000,10000,100000].forEach((n,i) => achievement("click-"+n,["First Tap","Cash Habit","Busy Hands","Click Addict","Tap Tycoon","Human Machine"][i],"Click the coin "+format(n)+" times","👆",s=>s.totalClicks>=n));
   [1,10,50,250,1000,5000].forEach((n,i) => achievement("business-"+n,["Business Owner","Local Mogul","Entrepreneur","Empire Builder","Market Leader","Everywhere at Once"][i],"Own "+format(n)+" businesses","🏢",s=>sumBusinesses(s)>=n));
   [1,10,100,1000,10000,1000000,1e9,1e12].forEach((n,i) => achievement("rate-"+n,["First Dividend","Steady Stream","Money River","Cash Current","Golden Pipeline","Wealth Engine","Planet Economy","Universal Economy"][i],"Reach "+euro(n)+" per second","📈",s=>currentRate()>=n));
   [1,5,25,100].forEach((n,i)=>achievement("gold-"+n,["Golden Opportunity","Bill Hunter","Lucky Streak","Golden Legend"][i],"Claim "+n+" Golden Bills","✨",s=>s.goldenClicked>=n));
@@ -351,62 +351,15 @@
     }
     if(changed) save();
   }
-  const WEALTH_SCENES = [
-    [["coin",39,58,-12,1],["coin",56,60,11,1],["coin",49,43,4,1]],
-    [["coin",28,61,-14,1],["coin",43,67,8,1],["coin",60,67,-8,1],["coin",73,58,12,1],["coin",36,45,8,1],["coin",53,42,-11,1],["coin",65,42,6,1]],
-    [["bill",48,42,-14,1],["coin",27,65,-12,1],["coin",42,69,9,1],["coin",58,67,-8,1],["coin",73,60,13,1],["coin",37,48,5,1]],
-    [["bill",35,40,-18,1],["bill",61,39,16,1],["bill",48,57,-3,1],["coin",32,72,-8,1],["coin",65,72,10,1]],
-    [["stack",31,52,-11,1],["stack",67,53,10,1],["bill",50,34,-5,1],["bill",49,68,5,1],["coin",28,76,5,1],["coin",72,76,-6,1]],
-    [["stack",29,57,-13,1],["stack",68,57,12,1],["stack",50,35,0,1],["stack",50,68,2,1],["bill",33,28,-15,1],["bill",67,29,14,1],["coin",25,79,0,1],["coin",76,79,0,1]],
-    [["stack",28,58,-12,1],["stack",69,58,10,1],["stack",49,42,0,1],["stack",50,72,0,1],["gem",29,30,-15,1],["gem",69,27,12,1],["gem",51,20,0,1],["coin",75,77,0,1]],
-    [["stack",26,61,-12,1],["stack",71,61,11,1],["stack",49,48,0,1],["stack",49,74,0,1],["gem",27,31,-12,1],["gem",73,30,10,1],["crypto",49,24,0,1],["crypto",25,78,-11,.85],["crypto",76,78,11,.85]],
-    [["stack",22,64,-15,1],["stack",78,64,15,1],["stack",42,52,-5,1],["stack",60,52,5,1],["stack",50,27,0,1],["crypto",28,32,0,1],["crypto",73,32,0,1]],
-    [["stack",25,66,-11,1],["stack",75,66,11,1],["stack",50,56,0,1],["goldbar",36,35,-12,1],["goldbar",65,35,12,1],["gem",50,20,0,1],["coin",50,78,0,1]],
-    [["stack",26,68,-12,1],["stack",75,68,12,1],["goldbar",30,45,-12,1],["goldbar",70,45,12,1],["goldbar",50,50,0,1],["gem",34,23,0,1],["gem",66,23,0,1],["crypto",50,17,0,1]],
-    [["vault",50,55,0,1],["stack",26,68,-11,.8],["stack",74,68,11,.8],["goldbar",38,71,-5,.8],["goldbar",63,71,5,.8],["gem",50,29,0,.8]],
-    [["vault",50,57,0,1],["stack",27,72,-10,.8],["stack",74,72,10,.8],["emerald",28,35,-12,1],["emerald",72,35,12,1],["emerald",50,19,0,1],["goldbar",50,69,0,.8]],
-    [["vault",50,57,0,1],["stack",27,71,-10,.8],["stack",74,71,10,.8],["gem",27,33,-12,1],["gem",73,33,12,1],["gem",50,14,0,1.2],["goldbar",50,70,0,.8]],
-    [["vault",50,57,0,1],["goldbar",28,70,-10,.9],["goldbar",72,70,10,.9],["pink",28,32,-12,1],["pink",73,32,12,1],["pink",50,15,0,1.2],["stack",50,72,0,.8]],
-    [["vault",50,57,0,1],["goldbar",30,71,-10,.9],["goldbar",70,71,10,.9],["obsidian",26,34,-12,1],["obsidian",74,34,12,1],["obsidian",50,17,0,1.2],["crypto",50,73,0,.8]],
-    [["vault",50,58,0,1],["goldbar",24,71,-13,.9],["goldbar",76,71,13,.9],["stack",50,71,0,.8],["gem",26,34,0,.9],["pink",74,34,0,.9],["crown",50,13,0,1]],
-    [["vault",50,58,0,1],["goldbar",28,72,-11,.9],["goldbar",72,72,11,.9],["crown",50,18,0,1.1],["star",21,35,0,.8],["star",79,35,0,.8],["gem",38,54,0,.7],["emerald",62,54,0,.7]],
-    [["orb",50,50,0,1],["vault",50,70,0,.75],["crown",50,18,0,.9],["star",20,35,0,.7],["star",80,35,0,.7],["obsidian",25,72,0,.8],["pink",75,72,0,.8]]
-  ];
-  function buildWealthArt(stage) {
-    pileEl.replaceChildren();
-    for(const pieces of [WEALTH_SCENES[stage]]){
-      const scene=document.createElement("span");
-      scene.className="wealth-scene scene-"+stage;
-      scene.setAttribute("aria-hidden","true");
-      for(const [type,x,y,rotation,scale] of pieces){
-        const piece=document.createElement("span");
-        piece.className="wealth-piece piece-"+type;
-        piece.textContent=type==="coin"||type==="bill"?"$":type==="crypto"?"₿":"";
-        piece.style.setProperty("--x",x+"%");
-        piece.style.setProperty("--y",y+"%");
-        piece.style.setProperty("--rot",rotation+"deg");
-        piece.style.setProperty("--scale",scale);
-        scene.append(piece);
-      }
-      pileEl.append(scene);
-    }
-    pileEl.append(makeCosmeticPileArt(cosmetics.loadout.pile||""));
-  }
-  function makeCosmeticPileArt(skin){
-    const art=featureElement("span","v2-cosmetic-pile");art.dataset.pileSkin=skin;
-    art.setAttribute("aria-hidden","true");
-    for(const [kind,label] of [["coin","$"],["gold",""],["bitcoin","₿"],["diamond",""]]){
-      const item=featureElement("span","v2-wealth-item "+kind);
-      item.append(featureElement("span","v2-wealth-shape",label),featureElement("small","",kind.toUpperCase()));
-      art.append(item);
-    }
-    return art;
+  function buildWealthArt() {
+    pileEl.replaceChildren(window.ClickTheCashCoin.create(cosmetics.loadout.pile));
   }
   function getWealthVisualTier(rate,lifetime=state.lifetime) {return window.ClickTheCashWealth.stage(rate,lifetime);}
   function updatePile() {
     const stage=getWealthVisualTier(Math.max(currentRate(),state.highestRate));
     const tier=Math.min(4,Math.floor(stage/4));
-    if(pileEl.dataset.stage!==String(stage)){buildWealthArt(stage);pileEl.dataset.stage=String(stage);}
+    if(!pileEl.querySelector(".coin-art"))buildWealthArt();
+    pileEl.dataset.stage=String(stage);
     document.documentElement.dataset.wealthTier=String(tier);
     document.documentElement.classList.toggle("diamond-theme",tier>=2);
     document.documentElement.classList.toggle("luxury-tier",tier>=3);
@@ -459,10 +412,10 @@
     }else if(goldenExpires>now){
       const row=featureElement("div","v2-event-active");
       const art=document.createElement("img");art.src="assets/bills/"+billTier.replaceAll("_","-")+"-bill.png";art.alt="";
-      row.append(art,featureElement("strong","",billTier.replaceAll("_"," ")+" Bill"),featureElement("small","","Tap the bill on the cash pile · "+Math.ceil((goldenExpires-now)/1000)+"s"));eventPanel.append(row);
+      row.append(art,featureElement("strong","",billTier.replaceAll("_"," ")+" Bill"),featureElement("small","","Tap the bill on the coin · "+Math.ceil((goldenExpires-now)/1000)+"s"));eventPanel.append(row);
     }else if(state.pendingDropUntilMs>now){
-      const row=featureElement("div","v2-event-active");row.append(featureElement("span","v2-event-art","◆"),featureElement("strong","","Booster Drop"),featureElement("small","","Claim beside the cash pile · "+Math.ceil((state.pendingDropUntilMs-now)/1000)+"s"));eventPanel.append(row);
-    }else eventPanel.append(featureElement("p","v2-status-empty","No active event. Watch the cash pile for the next Golden Bill."));
+      const row=featureElement("div","v2-event-active");row.append(featureElement("span","v2-event-art","◆"),featureElement("strong","","Booster Drop"),featureElement("small","","Claim beside the coin · "+Math.ceil((state.pendingDropUntilMs-now)/1000)+"s"));eventPanel.append(row);
+    }else eventPanel.append(featureElement("p","v2-status-empty","No active event. Watch the coin for the next Golden Bill."));
   }
   function compactGroup(amount) {
     if(amount<1000)return String(amount);
@@ -1211,7 +1164,7 @@
   function applyCosmeticLook(){
     for(const slot of ["pile","click","background","cards","profile"])
       document.documentElement.dataset["cosmetic"+slot[0].toUpperCase()+slot.slice(1)]=cosmetics.loadout[slot]||"";
-    const pileArt=pileEl.querySelector(".v2-cosmetic-pile");if(pileArt)pileArt.dataset.pileSkin=cosmetics.loadout.pile||"";
+    const coin=pileEl.querySelector(".coin-art");if(coin)window.ClickTheCashCoin.apply(coin,cosmetics.loadout.pile);
   }
   async function refreshCosmetics(){
     if(!account.authenticated||!account.username)return;
@@ -1233,7 +1186,7 @@
     const scene=featureElement("div","v2-cosmetic-demo");
     for(const slot of ["pile","click","background","cards","profile"])scene.dataset["preview"+slot[0].toUpperCase()+slot.slice(1)]=looks[slot]||"";
     const header=featureElement("div","v2-demo-profile",(account.username||"PLAYER")+" · Preview");
-    const pile=featureElement("div","v2-demo-pile");pile.append(makeCosmeticPileArt(looks.pile||"default"));
+    const pile=featureElement("div","v2-demo-pile");pile.append(window.ClickTheCashCoin.create(looks.pile));
     const sample=featureElement("div","v2-demo-feedback");
     sample.append(featureElement("strong","v2-demo-click","+$100"));
     const card=featureElement("div","v2-demo-card");card.append(featureElement("strong","","Your business"),featureElement("span","","+$250 / second"));
@@ -1244,7 +1197,7 @@
   function renderCosmetics(){
     const box=$("cosmeticsList");box.replaceChildren();
     if(!account.authenticated){cosmetics={owned:state.rewardCosmetics,loadout:state.cosmeticLoadout};box.append(featureElement("p","section-intro","Guest crate rewards stay in this browser. Sign in for account cosmetics across devices."));}
-    const names={pile:"Money pile skin",click:"Click effect",background:"Background theme",cards:"Business cards",profile:"Profile / username"};
+    const names={pile:"Coin Skin",click:"Click effect",background:"Background theme",cards:"Business cards",profile:"Profile / username"};
     for(const [slot,label] of Object.entries(names)){
       const group=featureElement("section","cosmetic-group");group.append(featureElement("h3","",label));
       const options=[{id:null,name:"Default",owned:true},...premiumStatus.catalog.flatMap(product=>Object.entries(product.cosmetics||{}).filter(([key])=>key===slot).map(([,id])=>({id,name:product.name,owned:cosmetics.owned.includes(id)})))];
